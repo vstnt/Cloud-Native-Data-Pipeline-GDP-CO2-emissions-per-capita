@@ -25,12 +25,18 @@ Schema final:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List
+from typing import List, Optional, Union
 
 import pandas as pd
 
+from adapters import StorageAdapter
 from .wikipedia_co2_processed import normalize_country_name
-from .world_bank_gdp_processed import PROCESSED_OUTPUT_DIR as WORLD_BANK_PROCESSED_OUTPUT_DIR
+from .world_bank_gdp_processed import (
+    PROCESSED_BASE_PREFIX as WORLD_BANK_PROCESSED_BASE_PREFIX,
+    PROCESSED_OUTPUT_DIR as WORLD_BANK_PROCESSED_OUTPUT_DIR,
+)
+
+COUNTRY_MAPPING_BASE_PREFIX = "processed/country_mapping"
 
 # Diretório local de saída para o mapping processado
 COUNTRY_MAPPING_OUTPUT_DIR = Path("processed") / "country_mapping"
@@ -62,8 +68,31 @@ def _load_world_bank_processed_frames(
     return frames
 
 
+def _load_world_bank_processed_frames_with_storage(
+    processed_dir: Path | str = WORLD_BANK_PROCESSED_OUTPUT_DIR,
+    storage: Optional[StorageAdapter] = None,
+) -> List[pd.DataFrame]:
+    """
+    Variante de _load_world_bank_processed_frames que suporta leitura via
+    StorageAdapter (por exemplo, S3) alA(c)m do filesystem local.
+    """
+    if storage is None:
+        return _load_world_bank_processed_frames(processed_dir)
+
+    frames: List[pd.DataFrame] = []
+    keys = storage.list_keys(WORLD_BANK_PROCESSED_BASE_PREFIX)
+    for key in keys:
+        if not key.endswith(".parquet"):
+            continue
+        df = storage.read_parquet(key)
+        frames.append(df)
+    return frames
+
+
 def build_country_mapping_from_world_bank_parquet(
     processed_dir: Path | str = WORLD_BANK_PROCESSED_OUTPUT_DIR,
+    *,
+    storage: Optional[StorageAdapter] = None,
 ) -> pd.DataFrame:
     """
     Gera o mapping base a partir do PROCESSED do World Bank.
@@ -74,7 +103,7 @@ def build_country_mapping_from_world_bank_parquet(
     - Remove duplicados.
     - Atribui source_precedence="world_bank".
     """
-    frames = _load_world_bank_processed_frames(processed_dir)
+    frames = _load_world_bank_processed_frames_with_storage(processed_dir, storage=storage)
     if not frames:
         # DataFrame vazio com schema estável
         return pd.DataFrame(
@@ -334,4 +363,3 @@ __all__ = [
     "build_and_save_country_mapping_from_world_bank",
     "load_country_mapping",
 ]
-

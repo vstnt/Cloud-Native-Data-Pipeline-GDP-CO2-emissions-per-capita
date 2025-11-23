@@ -147,10 +147,32 @@ def _extract_emissions_2000_2023(row: Dict[str, Any]) -> Dict[str, Optional[floa
     }
 
 
+def _load_raw_records_with_storage(
+    raw_file_path: Path | str,
+    storage: Optional[StorageAdapter] = None,
+) -> Iterable[Dict[str, Any]]:
+    """
+    Variante de _load_raw_records que suporta leitura via StorageAdapter
+    (por exemplo, S3) alA(c)m do filesystem local.
+    """
+    if storage is None:
+        yield from _load_raw_records(raw_file_path)
+        return
+
+    content_bytes = storage.read_raw(str(raw_file_path))
+    text = content_bytes.decode("utf-8")
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        yield json.loads(line)
+
+
 def build_wikipedia_co2_dataframe(
     raw_file_path: Path | str,
     *,
     country_mapping: Optional[pd.DataFrame] = None,
+    storage: Optional[StorageAdapter] = None,
 ) -> pd.DataFrame:
     """
     Constrói um DataFrame PROCESSED a partir de um arquivo RAW JSONL.
@@ -168,7 +190,7 @@ def build_wikipedia_co2_dataframe(
     """
     processed_rows: List[Dict[str, Any]] = []
 
-    for raw_record in _load_raw_records(raw_file_path):
+    for raw_record in _load_raw_records_with_storage(raw_file_path, storage=storage):
         ingestion_run_id = raw_record.get("ingestion_run_id")
         ingestion_ts = raw_record.get("ingestion_ts")
         data_source = raw_record.get("data_source") or WIKIPEDIA_DATA_SOURCE
@@ -355,7 +377,11 @@ def process_wikipedia_co2_raw_file(
     - Aplica, opcionalmente, o mapping de países para preencher country_code.
     - Salva arquivos Parquet particionados por ano.
     """
-    df = build_wikipedia_co2_dataframe(raw_file_path, country_mapping=country_mapping)
+    df = build_wikipedia_co2_dataframe(
+        raw_file_path,
+        country_mapping=country_mapping,
+        storage=storage,
+    )
     return save_wikipedia_co2_parquet_partitions(
         df,
         output_dir=output_dir,
@@ -406,4 +432,3 @@ __all__ = [
     "save_wikipedia_co2_parquet_partitions",
     "process_wikipedia_co2_raw_file",
 ]
-

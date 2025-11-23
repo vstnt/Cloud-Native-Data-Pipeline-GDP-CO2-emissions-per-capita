@@ -63,17 +63,36 @@ class WorldBankProcessedRecord:
         }
 
 
-def _load_raw_records(raw_file_path: Path) -> Iterable[Dict[str, Any]]:
+def _load_raw_records(
+    raw_file_path: Path | str,
+    storage: Optional[StorageAdapter] = None,
+) -> Iterable[Dict[str, Any]]:
     """
     Carrega registros RAW a partir de um arquivo JSONL produzido por
     `ingest_world_bank_gdp_raw`.
+
+    Quando `storage` Ac None, lA� diretamente do filesystem local. Caso
+    contrA!rio, usa `storage.read_raw` (por exemplo, S3).
     """
-    with raw_file_path.open("r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            yield json.loads(line)
+    # Modo local: ler direto do filesystem.
+    if storage is None:
+        path = Path(raw_file_path)
+        with path.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                yield json.loads(line)
+        return
+
+    # Modo abstrato (ex.: S3): usar StorageAdapter.read_raw.
+    content_bytes = storage.read_raw(str(raw_file_path))
+    text = content_bytes.decode("utf-8")
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        yield json.loads(line)
 
 
 def _transform_raw_record(record: Dict[str, Any]) -> Optional[WorldBankProcessedRecord]:
@@ -132,7 +151,11 @@ def _transform_raw_record(record: Dict[str, Any]) -> Optional[WorldBankProcessed
     )
 
 
-def build_world_bank_gdp_dataframe(raw_file_path: Path | str) -> pd.DataFrame:
+def build_world_bank_gdp_dataframe(
+    raw_file_path: Path | str,
+    *,
+    storage: Optional[StorageAdapter] = None,
+) -> pd.DataFrame:
     """
     Constrói um DataFrame PROCESSED a partir de um arquivo RAW JSONL.
 
@@ -147,10 +170,9 @@ def build_world_bank_gdp_dataframe(raw_file_path: Path | str) -> pd.DataFrame:
         ingestion_ts: timestamp (datetime64[ns, UTC] no pandas)
         data_source: string
     """
-    path = Path(raw_file_path)
     processed_rows: List[Dict[str, Any]] = []
 
-    for raw_record in _load_raw_records(path):
+    for raw_record in _load_raw_records(raw_file_path, storage=storage):
         processed = _transform_raw_record(raw_record)
         if processed is not None:
             processed_rows.append(processed.to_dict())
@@ -267,7 +289,7 @@ def process_world_bank_gdp_raw_file(
     Retorna:
         Lista de caminhos (local) ou chaves lógicas (quando usando StorageAdapter).
     """
-    df = build_world_bank_gdp_dataframe(raw_file_path)
+    df = build_world_bank_gdp_dataframe(raw_file_path, storage=storage)
     return save_world_bank_gdp_parquet_partitions(
         df,
         output_dir=output_dir,
@@ -308,4 +330,3 @@ __all__ = [
     "save_world_bank_gdp_parquet_partitions",
     "process_world_bank_gdp_raw_file",
 ]
-
