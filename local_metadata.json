@@ -29,7 +29,39 @@
       "rows_processed": 0,
       "last_checkpoint": "snapshot_date=20251123",
       "error_message": null
+    },
+    {
+      "ingestion_run_id": "6314982f-ac4e-4ea2-b17f-5118741f397f",
+      "run_scope": "world_bank_api",
+      "start_ts": "2025-11-23T17:15:59.960661+00:00",
+      "end_ts": "2025-11-23T17:16:13.741361+00:00",
+      "status": "SUCCESS",
+      "rows_processed": 6384,
+      "last_checkpoint": "2023",
+      "error_message": null
+    },
+    {
+      "ingestion_run_id": "8ed87959-6a32-484f-a991-5d074ccd0f28",
+      "run_scope": "curated_join",
+      "start_ts": "2025-11-23T17:16:18.448082+00:00",
+      "end_ts": "2025-11-23T17:16:18.588566+00:00",
+      "status": "SUCCESS",
+      "rows_processed": 0,
+      "last_checkpoint": "snapshot_date=20251123",
+      "error_message": null
+    },
+    {
+      "ingestion_run_id": "ddfe54da-4479-4e66-b60e-355c410633de",
+      "run_scope": "curated_join",
+      "start_ts": "2025-11-23T17:17:06.354987+00:00",
+      "end_ts": "2025-11-23T17:17:06.517391+00:00",
+      "status": "SUCCESS",
+      "rows_processed": 328,
+      "last_checkpoint": "snapshot_date=20251123",
+      "error_message": null
     }
   ],
-  "checkpoints": {}
+  "checkpoints": {
+    "last_year_loaded_world_bank": "2023"
+  }
 }
