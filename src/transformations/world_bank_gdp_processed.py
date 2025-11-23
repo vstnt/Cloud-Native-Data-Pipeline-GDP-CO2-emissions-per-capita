@@ -1,8 +1,8 @@
 """
 Processamento da World Bank API (GDP per capita) para camada PROCESSED.
 
-Este módulo implementa as transformações descritas na seção 2.1
-do "Plano do projeto - final.pdf":
+Implementa as transformações descritas na seção 2.1 do
+`context/Plano do projeto - final.pdf`:
 
 - Converter o JSON RAW em um schema tabular:
   country_code, country_name, year, gdp_per_capita_usd, indicator_id,
@@ -13,10 +13,7 @@ do "Plano do projeto - final.pdf":
 - Persistir a camada PROCESSED em formato Parquet, particionando por ano.
 
 Pensado para ser usado tanto localmente quanto, posteriormente,
-dentro de um handler AWS Lambda. O chamador deve garantir que o diretório
-`src/` está no PYTHONPATH (por exemplo, via:
-
-    PYTHONPATH=src python -m transformations.world_bank_gdp_processed
+dentro de um handler AWS Lambda.
 """
 
 from __future__ import annotations
@@ -24,14 +21,18 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Union
 
 import pandas as pd
 
+from adapters import StorageAdapter
 from ingestion_api.world_bank_ingestion import WORLD_BANK_DATA_SOURCE
 
-# Diretório local de saída para camada PROCESSED (pensando em mapear depois para S3/processed/)
+# Diretório local de saída para camada PROCESSED
 PROCESSED_OUTPUT_DIR = Path("processed") / "world_bank_gdp"
+
+# Prefixo lógico pensado para mapeamento 1:1 em S3
+PROCESSED_BASE_PREFIX = "processed/world_bank_gdp"
 
 
 @dataclass
@@ -86,8 +87,7 @@ def _transform_raw_record(record: Dict[str, Any]) -> Optional[WorldBankProcessed
     - Mantém indicator.id / indicator.value
     - Propaga ingestion_run_id, ingestion_ts e data_source
 
-    Retorna None para registros sem informações mínimas para o join
-    (por exemplo, sem countryiso3code ou year inválido).
+    Retorna None para registros sem informações mínimas para o join.
     """
     indicator = record.get("indicator") or {}
     country = record.get("country") or {}
@@ -107,9 +107,8 @@ def _transform_raw_record(record: Dict[str, Any]) -> Optional[WorldBankProcessed
         return None
 
     # Converter valor de GDP para float, se possível.
-    gdp_per_capita_usd: Optional[float]
     if value is None:
-        gdp_per_capita_usd = None
+        gdp_per_capita_usd: Optional[float] = None
     else:
         try:
             gdp_per_capita_usd = float(value)
@@ -204,58 +203,76 @@ def save_world_bank_gdp_parquet_partitions(
     df: pd.DataFrame,
     *,
     output_dir: Path | str = PROCESSED_OUTPUT_DIR,
-) -> List[Path]:
+    storage: Optional[StorageAdapter] = None,
+) -> List[Union[Path, str]]:
     """
     Salva o DataFrame PROCESSED particionado por ano em formato Parquet.
 
-    Layout local (mapeável para S3 posteriormente):
+    Layout lógico (mapeável para S3 posteriormente):
 
         processed/world_bank_gdp/year=<ano>/processed_worldbank_gdp_per_capita.parquet
 
-    Retorna a lista de caminhos gerados.
+    Quando `storage` é None, grava em disco local em `output_dir` e retorna
+    uma lista de `Path`. Quando `storage` é fornecido, grava via
+    `StorageAdapter.write_parquet` sob `PROCESSED_BASE_PREFIX` e retorna uma
+    lista de chaves lógicas (strings).
     """
-    output_root = Path(output_dir)
-    output_root.mkdir(parents=True, exist_ok=True)
-
     if df.empty or "year" not in df.columns:
-        # Nenhuma partição a salvar.
         return []
 
-    output_paths: List[Path] = []
-
-    # Garantir que year está em tipo inteiro para evitar surpresas em diretórios.
     df = df.copy()
     df["year"] = df["year"].astype("int64")
 
+    # Modo local (filesystem)
+    if storage is None:
+        output_root = Path(output_dir)
+        output_root.mkdir(parents=True, exist_ok=True)
+
+        output_paths: List[Path] = []
+        for year_value, df_year in df.groupby("year"):
+            year_int = int(year_value)
+            year_dir = output_root / f"year={year_int}"
+            year_dir.mkdir(parents=True, exist_ok=True)
+
+            file_path = year_dir / "processed_worldbank_gdp_per_capita.parquet"
+            df_year.to_parquet(file_path, index=False)
+            output_paths.append(file_path)
+
+        return output_paths
+
+    # Modo abstrato (S3 ou outro backend)
+    keys: List[str] = []
     for year_value, df_year in df.groupby("year"):
         year_int = int(year_value)
-        year_dir = output_root / f"year={year_int}"
-        year_dir.mkdir(parents=True, exist_ok=True)
+        key = f"{PROCESSED_BASE_PREFIX}/year={year_int}/processed_worldbank_gdp_per_capita.parquet"
+        storage.write_parquet(df_year, key)
+        keys.append(key)
 
-        file_path = year_dir / "processed_worldbank_gdp_per_capita.parquet"
-        df_year.to_parquet(file_path, index=False)
-        output_paths.append(file_path)
-
-    return output_paths
+    return keys
 
 
 def process_world_bank_gdp_raw_file(
     raw_file_path: Path | str,
     *,
     output_dir: Path | str = PROCESSED_OUTPUT_DIR,
-) -> List[Path]:
+    storage: Optional[StorageAdapter] = None,
+) -> List[Union[Path, str]]:
     """
     Pipeline completo de processamento World Bank (RAW -> PROCESSED Parquet).
 
     - Lê o JSONL RAW produzido por `ingest_world_bank_gdp_raw`.
-    - Constrói o DataFrame PROCESSED com o schema definido na seção 2.1.
+    - Constrói o DataFrame PROCESSED com o schema definido no plano.
     - Salva arquivos Parquet particionados por ano.
 
     Retorna:
-        Lista de caminhos dos arquivos Parquet gerados.
+        Lista de caminhos (local) ou chaves lógicas (quando usando StorageAdapter).
     """
     df = build_world_bank_gdp_dataframe(raw_file_path)
-    return save_world_bank_gdp_parquet_partitions(df, output_dir=output_dir)
+    return save_world_bank_gdp_parquet_partitions(
+        df,
+        output_dir=output_dir,
+        storage=storage,
+    )
 
 
 if __name__ == "__main__":
@@ -285,6 +302,7 @@ if __name__ == "__main__":
 
 __all__ = [
     "PROCESSED_OUTPUT_DIR",
+    "PROCESSED_BASE_PREFIX",
     "WorldBankProcessedRecord",
     "build_world_bank_gdp_dataframe",
     "save_world_bank_gdp_parquet_partitions",

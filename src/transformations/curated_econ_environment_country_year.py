@@ -2,11 +2,11 @@
 Curated dataset: Economic & Environmental by country-year.
 
 Implementa a camada CURATED descrita na seção 3.1 do
-`context/Plano do projeto - final.pdf` e no checklist de passos:
+`context/Plano do projeto - final.pdf`:
 
 - Join entre os datasets PROCESSED:
   - World Bank GDP per capita (econômico)
-  - Wikipedia CO₂ per capita (ambiental)
+  - Wikipedia CO2 per capita (ambiental)
 - Chave lógica: (country_code, year)
 - Campos principais:
     country_code               - string (chave)
@@ -20,7 +20,8 @@ Implementa a camada CURATED descrita na seção 3.1 do
     first_ingestion_run_id     - string
     last_update_run_id         - string
     last_update_ts             - timestamp
-- Particionamento local alinhado ao layout pensado para S3:
+
+Particionamento alinhado ao layout pensado para S3:
 
     curated/env_econ_country_year/
         year=<ano>/snapshot_date=<YYYYMMDD>/
@@ -32,15 +33,26 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Union
 
 import pandas as pd
 
+from adapters import StorageAdapter
 from metadata import CURATED_JOIN_SCOPE, end_run, start_run
-from .world_bank_gdp_processed import PROCESSED_OUTPUT_DIR as WORLD_BANK_PROCESSED_OUTPUT_DIR
-from .wikipedia_co2_processed import PROCESSED_OUTPUT_DIR as WIKIPEDIA_CO2_PROCESSED_OUTPUT_DIR
+from .world_bank_gdp_processed import (
+    PROCESSED_BASE_PREFIX as WORLD_BANK_PROCESSED_BASE_PREFIX,
+    PROCESSED_OUTPUT_DIR as WORLD_BANK_PROCESSED_OUTPUT_DIR,
+)
+from .wikipedia_co2_processed import (
+    PROCESSED_BASE_PREFIX as WIKIPEDIA_CO2_PROCESSED_BASE_PREFIX,
+    PROCESSED_OUTPUT_DIR as WIKIPEDIA_CO2_PROCESSED_OUTPUT_DIR,
+)
 
+# Diretório local de saída para a camada CURATED
 CURATED_OUTPUT_DIR = Path("curated") / "env_econ_country_year"
+
+# Prefixo lógico pensado para mapeamento 1:1 em S3
+CURATED_BASE_PREFIX = "curated/env_econ_country_year"
 
 
 @dataclass
@@ -60,22 +72,35 @@ class CuratedEconEnvironmentRecord:
 
 def _load_world_bank_processed(
     processed_dir: Path | str = WORLD_BANK_PROCESSED_OUTPUT_DIR,
+    storage: Optional[StorageAdapter] = None,
 ) -> pd.DataFrame:
-    root = Path(processed_dir)
-    if not root.exists():
-        return pd.DataFrame(
-            columns=[
-                "country_code",
-                "country_name",
-                "year",
-                "gdp_per_capita_usd",
-            ]
-        )
+    """
+    Carrega PROCESSED do World Bank GDP, localmente ou via StorageAdapter.
+    """
+    if storage is None:
+        root = Path(processed_dir)
+        if not root.exists():
+            return pd.DataFrame(
+                columns=[
+                    "country_code",
+                    "country_name",
+                    "year",
+                    "gdp_per_capita_usd",
+                ]
+            )
 
-    frames: List[pd.DataFrame] = []
-    for path in root.rglob("*.parquet"):
-        df = pd.read_parquet(path)
-        frames.append(df)
+        frames: List[pd.DataFrame] = []
+        for path in root.rglob("*.parquet"):
+            df = pd.read_parquet(path)
+            frames.append(df)
+    else:
+        keys = storage.list_keys(WORLD_BANK_PROCESSED_BASE_PREFIX)
+        frames = []
+        for key in keys:
+            if not key.endswith(".parquet"):
+                continue
+            df = storage.read_parquet(key)
+            frames.append(df)
 
     if not frames:
         return pd.DataFrame(
@@ -108,21 +133,34 @@ def _load_world_bank_processed(
 
 def _load_wikipedia_co2_processed(
     processed_dir: Path | str = WIKIPEDIA_CO2_PROCESSED_OUTPUT_DIR,
+    storage: Optional[StorageAdapter] = None,
 ) -> pd.DataFrame:
-    root = Path(processed_dir)
-    if not root.exists():
-        return pd.DataFrame(
-            columns=[
-                "country_code",
-                "year",
-                "co2_tons_per_capita",
-            ]
-        )
+    """
+    Carrega PROCESSED de CO2 da Wikipedia, localmente ou via StorageAdapter.
+    """
+    if storage is None:
+        root = Path(processed_dir)
+        if not root.exists():
+            return pd.DataFrame(
+                columns=[
+                    "country_code",
+                    "year",
+                    "co2_tons_per_capita",
+                ]
+            )
 
-    frames: List[pd.DataFrame] = []
-    for path in root.rglob("*.parquet"):
-        df = pd.read_parquet(path)
-        frames.append(df)
+        frames: List[pd.DataFrame] = []
+        for path in root.rglob("*.parquet"):
+            df = pd.read_parquet(path)
+            frames.append(df)
+    else:
+        keys = storage.list_keys(WIKIPEDIA_CO2_PROCESSED_BASE_PREFIX)
+        frames = []
+        for key in keys:
+            if not key.endswith(".parquet"):
+                continue
+            df = storage.read_parquet(key)
+            frames.append(df)
 
     if not frames:
         return pd.DataFrame(
@@ -157,6 +195,9 @@ def build_curated_econ_environment_country_year_dataframe(
     curated_run_id: str,
     snapshot_ts: datetime,
 ) -> pd.DataFrame:
+    """
+    Executa o join e cálculos derivados a partir dos DataFrames PROCESSED.
+    """
     if world_bank_df.empty or "country_code" not in world_bank_df.columns:
         return pd.DataFrame(
             columns=[
@@ -275,9 +316,16 @@ def build_curated_econ_environment_country_year_from_processed(
     wikipedia_processed_dir: Path | str = WIKIPEDIA_CO2_PROCESSED_OUTPUT_DIR,
     curated_run_id: str,
     snapshot_ts: datetime,
+    storage: Optional[StorageAdapter] = None,
 ) -> pd.DataFrame:
-    wb_df = _load_world_bank_processed(processed_dir=world_bank_processed_dir)
-    co2_df = _load_wikipedia_co2_processed(processed_dir=wikipedia_processed_dir)
+    wb_df = _load_world_bank_processed(
+        processed_dir=world_bank_processed_dir,
+        storage=storage,
+    )
+    co2_df = _load_wikipedia_co2_processed(
+        processed_dir=wikipedia_processed_dir,
+        storage=storage,
+    )
     return build_curated_econ_environment_country_year_dataframe(
         wb_df,
         co2_df,
@@ -291,10 +339,11 @@ def save_curated_econ_environment_country_year_parquet_partitions(
     *,
     output_dir: Path | str = CURATED_OUTPUT_DIR,
     snapshot_date: Optional[str] = None,
-) -> List[Path]:
-    output_root = Path(output_dir)
-    output_root.mkdir(parents=True, exist_ok=True)
-
+    storage: Optional[StorageAdapter] = None,
+) -> List[Union[Path, str]]:
+    """
+    Salva o DataFrame CURATED particionado por ano e snapshot_date.
+    """
     if df.empty or "year" not in df.columns:
         return []
 
@@ -304,19 +353,37 @@ def save_curated_econ_environment_country_year_parquet_partitions(
     if snapshot_date is None:
         snapshot_date = datetime.now(timezone.utc).strftime("%Y%m%d")
 
-    output_paths: List[Path] = []
+    if storage is None:
+        output_root = Path(output_dir)
+        output_root.mkdir(parents=True, exist_ok=True)
+
+        output_paths: List[Path] = []
+        for year_value, df_year in df.groupby("year"):
+            if pd.isna(year_value):
+                continue
+            year_int = int(year_value)
+            year_dir = output_root / f"year={year_int}" / f"snapshot_date={snapshot_date}"
+            year_dir.mkdir(parents=True, exist_ok=True)
+
+            file_path = year_dir / "curated_econ_environment_country_year.parquet"
+            df_year.to_parquet(file_path, index=False)
+            output_paths.append(file_path)
+
+        return output_paths
+
+    keys: List[str] = []
     for year_value, df_year in df.groupby("year"):
         if pd.isna(year_value):
             continue
         year_int = int(year_value)
-        year_dir = output_root / f"year={year_int}" / f"snapshot_date={snapshot_date}"
-        year_dir.mkdir(parents=True, exist_ok=True)
+        key = (
+            f"{CURATED_BASE_PREFIX}/year={year_int}/snapshot_date={snapshot_date}/"
+            "curated_econ_environment_country_year.parquet"
+        )
+        storage.write_parquet(df_year, key)
+        keys.append(key)
 
-        file_path = year_dir / "curated_econ_environment_country_year.parquet"
-        df_year.to_parquet(file_path, index=False)
-        output_paths.append(file_path)
-
-    return output_paths
+    return keys
 
 
 def build_and_save_curated_econ_environment_country_year(
@@ -325,7 +392,11 @@ def build_and_save_curated_econ_environment_country_year(
     wikipedia_processed_dir: Path | str = WIKIPEDIA_CO2_PROCESSED_OUTPUT_DIR,
     output_dir: Path | str = CURATED_OUTPUT_DIR,
     run_scope: str = CURATED_JOIN_SCOPE,
-) -> List[Path]:
+    storage: Optional[StorageAdapter] = None,
+) -> List[Union[Path, str]]:
+    """
+    Orquestra o build + save da camada CURATED, registrando metadados de run.
+    """
     run_id = start_run(run_scope)
     snapshot_ts = datetime.now(timezone.utc)
     snapshot_date = snapshot_ts.strftime("%Y%m%d")
@@ -336,12 +407,14 @@ def build_and_save_curated_econ_environment_country_year(
             wikipedia_processed_dir=wikipedia_processed_dir,
             curated_run_id=run_id,
             snapshot_ts=snapshot_ts,
+            storage=storage,
         )
 
         paths = save_curated_econ_environment_country_year_parquet_partitions(
             df,
             output_dir=output_dir,
             snapshot_date=snapshot_date,
+            storage=storage,
         )
 
         end_run(
@@ -403,6 +476,7 @@ if __name__ == "__main__":
 
 __all__ = [
     "CURATED_OUTPUT_DIR",
+    "CURATED_BASE_PREFIX",
     "CuratedEconEnvironmentRecord",
     "build_curated_econ_environment_country_year_dataframe",
     "build_curated_econ_environment_country_year_from_processed",

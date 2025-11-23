@@ -7,7 +7,7 @@ Implements the "Analytical Output" section of the project plan:
   Scatterplot using only year 2023:
     - X axis: gdp_per_capita_usd
     - Y axis: co2_tons_per_capita
-    - Color or size guided by co2_per_1000usd_gdp
+    - Color guided by co2_per_1000usd_gdp
 
 - Artefact 2: correlation_summary.csv
   Small CSV with one row per year (2000 and 2023) containing:
@@ -15,9 +15,6 @@ Implements the "Analytical Output" section of the project plan:
     - pearson_correlation_gdp_co2
     - top5_countries_highest_co2_per_1000usd_gdp
     - top5_countries_lowest_co2_per_1000usd_gdp
-
-Both artefacts are built from the curated dataset
-curated_econ_environment_country_year.
 """
 
 from __future__ import annotations
@@ -28,6 +25,7 @@ from typing import Iterable, List, Tuple
 import matplotlib.pyplot as plt
 import pandas as pd
 
+from adapters import StorageAdapter
 from transformations import CURATED_ECON_ENVIRONMENT_OUTPUT_DIR
 
 
@@ -35,28 +33,46 @@ ANALYSIS_OUTPUT_DIR = Path("analysis")
 SCATTER_PNG_NAME = "gdp_vs_co2_scatter.png"
 CORRELATION_CSV_NAME = "correlation_summary.csv"
 
+# Prefixo lógico usado quando lido via StorageAdapter
+CURATED_BASE_PREFIX = "curated/env_econ_country_year"
+
 
 def _load_curated_for_years(
     years: Iterable[int],
     *,
     curated_root: Path | str = CURATED_ECON_ENVIRONMENT_OUTPUT_DIR,
+    storage: StorageAdapter | None = None,
 ) -> pd.DataFrame:
     """
-    Load curated data for the given years, aggregating all snapshot_date partitions.
+    Carrega dados CURATED para os anos informados, agregando todos os snapshots.
 
-    Layout expected:
-        curated/env_econ_country_year/year=<year>/snapshot_date=<YYYYMMDD>/curated_econ_environment_country_year.parquet
+    Layout esperado (local):
+        curated/env_econ_country_year/year=<year>/snapshot_date=<YYYYMMDD>/
+            curated_econ_environment_country_year.parquet
+
+    Quando `storage` é fornecido, o carregamento é feito via StorageAdapter
+    usando o prefixo CURATED_BASE_PREFIX.
     """
-    curated_root = Path(curated_root)
     frames: List[pd.DataFrame] = []
 
-    for year in years:
-        year_dir = curated_root / f"year={year}"
-        if not year_dir.exists():
-            continue
-        for path in year_dir.rglob("curated_econ_environment_country_year.parquet"):
-            df = pd.read_parquet(path)
-            frames.append(df)
+    if storage is None:
+        curated_root = Path(curated_root)
+        for year in years:
+            year_dir = curated_root / f"year={year}"
+            if not year_dir.exists():
+                continue
+            for path in year_dir.rglob("curated_econ_environment_country_year.parquet"):
+                df = pd.read_parquet(path)
+                frames.append(df)
+    else:
+        for year in years:
+            prefix = f"{CURATED_BASE_PREFIX}/year={year}/"
+            keys = storage.list_keys(prefix)
+            for key in keys:
+                if not key.endswith("curated_econ_environment_country_year.parquet"):
+                    continue
+                df = storage.read_parquet(key)
+                frames.append(df)
 
     if not frames:
         return pd.DataFrame(
@@ -71,7 +87,6 @@ def _load_curated_for_years(
         )
 
     df_all = pd.concat(frames, ignore_index=True)
-    # Ensure expected columns are present and properly typed
     for col in ["gdp_per_capita_usd", "co2_tons_per_capita", "co2_per_1000usd_gdp"]:
         if col in df_all.columns:
             df_all[col] = pd.to_numeric(df_all[col], errors="coerce")
@@ -90,15 +105,16 @@ def build_gdp_vs_co2_scatter(
     curated_root: Path | str = CURATED_ECON_ENVIRONMENT_OUTPUT_DIR,
     output_dir: Path | str = ANALYSIS_OUTPUT_DIR,
     year: int = 2023,
+    storage: StorageAdapter | None = None,
 ) -> Path:
     """
-    Build the scatterplot for year 2023 (or another year if specified).
+    Gera o scatterplot para o ano informado (default: 2023).
 
     X: gdp_per_capita_usd
     Y: co2_tons_per_capita
-    Color: co2_per_1000usd_gdp
+    Cor: co2_per_1000usd_gdp
     """
-    df = _load_curated_for_years([year], curated_root=curated_root)
+    df = _load_curated_for_years([year], curated_root=curated_root, storage=storage)
     if df.empty:
         raise RuntimeError(f"No curated data available for year={year}")
 
@@ -123,10 +139,10 @@ def build_gdp_vs_co2_scatter(
         edgecolors="none",
     )
 
-    plt.colorbar(scatter, label="CO₂ per 1000 USD GDP")
+    plt.colorbar(scatter, label="CO2 per 1000 USD GDP")
     plt.xlabel("GDP per capita (USD)")
-    plt.ylabel("CO₂ tons per capita")
-    plt.title(f"GDP vs CO₂ per capita - {year}")
+    plt.ylabel("CO2 tons per capita")
+    plt.title(f"GDP vs CO2 per capita - {year}")
     plt.grid(True, linestyle="--", alpha=0.3)
 
     plt.tight_layout()
@@ -142,9 +158,7 @@ def _format_top5_countries(
     ascending: bool,
 ) -> str:
     """
-    Helper to build the top5 countries string based on co2_per_1000usd_gdp.
-
-    Returns a semicolon-separated list of country names in the desired order.
+    Monta a string de top5 países baseada em co2_per_1000usd_gdp.
     """
     df_valid = df.dropna(subset=["co2_per_1000usd_gdp", "country_name"]).copy()
     if df_valid.empty:
@@ -163,17 +177,12 @@ def build_correlation_summary(
     curated_root: Path | str = CURATED_ECON_ENVIRONMENT_OUTPUT_DIR,
     output_dir: Path | str = ANALYSIS_OUTPUT_DIR,
     years: Tuple[int, int] = (2000, 2023),
+    storage: StorageAdapter | None = None,
 ) -> Path:
     """
-    Build the correlation_summary.csv artefact, with one row per year.
-
-    Columns:
-      - year
-      - pearson_correlation_gdp_co2
-      - top5_countries_highest_co2_per_1000usd_gdp
-      - top5_countries_lowest_co2_per_1000usd_gdp
+    Gera o artefato correlation_summary.csv, com uma linha por ano.
     """
-    df_all = _load_curated_for_years(years, curated_root=curated_root)
+    df_all = _load_curated_for_years(years, curated_root=curated_root, storage=storage)
     if df_all.empty:
         raise RuntimeError(f"No curated data available for years={years}")
 

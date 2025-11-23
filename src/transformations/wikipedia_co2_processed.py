@@ -1,5 +1,5 @@
 """
-Processamento da tabela de CO₂ per capita da Wikipedia (camada PROCESSED).
+Processamento da tabela de CO2 per capita da Wikipedia (camada PROCESSED).
 
 Implementa as regras descritas na seção 2.2 do
 `context/Plano do projeto - final.pdf`:
@@ -10,13 +10,13 @@ Implementa as regras descritas na seção 2.2 do
   (uma linha por (country, year)).
 - Criar campos:
     country_name              - nome original da tabela
-    country_name_normalized   - nome normalizado para join (sem acentos, lower, etc.)
-    country_code              - ISO3 (opcional, preenchido via mapping em etapa posterior)
+    country_name_normalized   - nome normalizado para join
+    country_code              - ISO3 (opcional, preenchido via mapping)
     year                      - 2000 ou 2023
     co2_tons_per_capita       - emissões per capita no ano
-    notes                     - campo livre para observações (footnotes, agregados, etc.)
+    notes                     - campo livre para observações
     ingestion_run_id, ingestion_ts, data_source
-- Persistir a camada PROCESSED em Parquet, pensada para:
+- Persistir a camada PROCESSED em Parquet, com layout:
 
     processed/wikipedia_co2/year=<ano>/processed_wikipedia_co2_per_capita.parquet
 """
@@ -28,14 +28,18 @@ import re
 import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Union
 
 import pandas as pd
 
+from adapters import StorageAdapter
 from crawler.wikipedia_co2_crawler import WIKIPEDIA_DATA_SOURCE
 
-# Diretório local de saída para camada PROCESSED (mapeável depois para S3/processed/)
+# Diretório local de saída para camada PROCESSED (pensando em mapear depois para S3/processed/)
 PROCESSED_OUTPUT_DIR = Path("processed") / "wikipedia_co2"
+
+# Prefixo lógico pensado para mapeamento 1:1 em S3
+PROCESSED_BASE_PREFIX = "processed/wikipedia_co2"
 
 
 @dataclass
@@ -70,26 +74,20 @@ def normalize_country_name(name: str) -> str:
     """
     Normaliza nomes de países para facilitar joins.
 
-    Estratégia (alinhada ao plano):
+    Estratégia:
     - lower case
     - remoção de acentos
-    - remoção de pontuação/caracteres não alfanuméricos (exceto espaço)
+    - remoção de caracteres não alfanuméricos (exceto espaço)
     - colapsar múltiplos espaços
     - trim nas pontas
     """
     if name is None:
         return ""
 
-    # lower
     s = name.lower()
-
-    # remover acentos
     s = unicodedata.normalize("NFKD", s)
     s = "".join(ch for ch in s if not unicodedata.combining(ch))
-
-    # manter apenas [a-z0-9 ] (espaço)
     s = re.sub(r"[^a-z0-9 ]", " ", s)
-    # colapsar múltiplos espaços
     s = re.sub(r"\s+", " ", s)
     return s.strip()
 
@@ -113,9 +111,7 @@ def _load_raw_records(raw_file_path: Path | str) -> Iterable[Dict[str, Any]]:
 
 def _parse_float(value: Any) -> Optional[float]:
     """
-    Converte um valor textual em float, tratando casos comuns de missing:
-    - "", "-", "–", "—", "NA", "N/A"
-    - strings com espaços.
+    Converte um valor textual em float, tratando casos comuns de missing.
     """
     if value is None:
         return None
@@ -125,12 +121,11 @@ def _parse_float(value: Any) -> Optional[float]:
     text = str(value).strip()
     if text == "":
         return None
-    if text in {"-", "–", "—"}:
+    if text in {"-", "–"}:
         return None
     if text.upper() in {"NA", "N/A"}:
         return None
 
-    # Remover separadores de milhar genéricos, se aparecerem.
     text = text.replace(",", "")
     try:
         return float(text)
@@ -142,20 +137,6 @@ def _extract_emissions_2000_2023(row: Dict[str, Any]) -> Dict[str, Optional[floa
     """
     Extrai emissões per capita para 2000 e 2023 a partir de uma linha da
     tabela RAW.
-
-    Observação importante:
-    ----------------------
-    No HTML original, a tabela possui duas colunas de emissões (2000/2023),
-    mas após o parsing em `wikipedia_co2_crawler`, o header ficou:
-
-        ['Location', '% of global average',
-         'Emissions per capita (tons per year)', '% change from 2000']
-
-    E os valores das linhas seguem a ordem:
-        [Location, % of global average, 2023, 2000]
-
-    Ou seja, a chave '% change from 2000' no JSON representa o valor de 2000.
-    Aqui explicitamos esse mapeamento.
     """
     v_2023 = row.get("Emissions per capita (tons per year)")
     v_2000 = row.get("% change from 2000")
@@ -175,8 +156,8 @@ def build_wikipedia_co2_dataframe(
     Constrói um DataFrame PROCESSED a partir de um arquivo RAW JSONL.
 
     Schema resultante (colunas):
-        country_name: string (nome original da tabela / ou canônico se mapping aplicado)
-        country_name_normalized: string (para join)
+        country_name: string
+        country_name_normalized: string
         country_code: string (ISO3, se mapping disponível)
         year: int (2000 ou 2023)
         co2_tons_per_capita: float
@@ -184,10 +165,6 @@ def build_wikipedia_co2_dataframe(
         ingestion_run_id: string
         ingestion_ts: timestamp
         data_source: string
-
-    Se `country_mapping` for fornecido, é esperado que contenha ao menos:
-        country_name_normalized, country_code, country_name
-    e será aplicado via left join para preencher country_code e country_name.
     """
     processed_rows: List[Dict[str, Any]] = []
 
@@ -211,17 +188,14 @@ def build_wikipedia_co2_dataframe(
             em_2023 = emissions["emissions_2023"]
             em_2000 = emissions["emissions_2000"]
 
-            # Opcionalmente podemos acumular notas, por enquanto vazio.
             notes: Optional[str] = None
 
-            # Para cada linha da tabela original, geramos até 2 linhas
-            # (formato longo): uma para 2000 e outra para 2023.
             if em_2000 is not None:
                 processed_rows.append(
                     WikipediaCO2ProcessedRecord(
                         country_name=country_name,
                         country_name_normalized=country_name_norm,
-                        country_code=None,  # preenchido depois via mapping
+                        country_code=None,
                         year=2000,
                         co2_tons_per_capita=em_2000,
                         notes=notes,
@@ -236,7 +210,7 @@ def build_wikipedia_co2_dataframe(
                     WikipediaCO2ProcessedRecord(
                         country_name=country_name,
                         country_name_normalized=country_name_norm,
-                        country_code=None,  # preenchido depois via mapping
+                        country_code=None,
                         year=2023,
                         co2_tons_per_capita=em_2023,
                         notes=notes,
@@ -246,7 +220,6 @@ def build_wikipedia_co2_dataframe(
                     ).to_dict()
                 )
 
-    # DataFrame vazio, mas com colunas definidas, para manter contrato estável.
     df = pd.DataFrame(
         processed_rows
         or [
@@ -264,7 +237,6 @@ def build_wikipedia_co2_dataframe(
         ]
     )
 
-    # Tipagem explícita
     string_cols = [
         "country_name",
         "country_name_normalized",
@@ -292,13 +264,13 @@ def build_wikipedia_co2_dataframe(
         missing = required_cols - set(country_mapping.columns)
         if missing:
             raise ValueError(
-                f"country_mapping está faltando colunas obrigatórias: {sorted(missing)}"
+                f"country_mapping está faltando colunas obrigatórias: {sorted(missing)}",
             )
 
         mapping = country_mapping.copy()
-        mapping = mapping[["country_name_normalized", "country_code", "country_name"]].drop_duplicates(
-            subset=["country_name_normalized"]
-        )
+        mapping = mapping[
+            ["country_name_normalized", "country_code", "country_name"]
+        ].drop_duplicates(subset=["country_name_normalized"])
 
         df = df.merge(
             mapping,
@@ -307,7 +279,6 @@ def build_wikipedia_co2_dataframe(
             suffixes=("", "_mapped"),
         )
 
-        # Se houver match, usamos o country_name canônico do mapping
         df["country_code"] = df["country_code_mapped"].combine_first(df["country_code"])
         df["country_name"] = df["country_name_mapped"].combine_first(df["country_name"])
         df = df.drop(columns=["country_code_mapped", "country_name_mapped"])
@@ -319,39 +290,54 @@ def save_wikipedia_co2_parquet_partitions(
     df: pd.DataFrame,
     *,
     output_dir: Path | str = PROCESSED_OUTPUT_DIR,
-) -> List[Path]:
+    storage: Optional[StorageAdapter] = None,
+) -> List[Union[Path, str]]:
     """
     Salva o DataFrame PROCESSED particionado por ano em formato Parquet.
 
-    Layout local (mapeável para S3 posteriormente):
+    Layout lógico:
 
         processed/wikipedia_co2/year=<ano>/processed_wikipedia_co2_per_capita.parquet
 
-    Retorna a lista de caminhos gerados.
+    Quando `storage` é None, grava em disco local em `output_dir` e retorna
+    uma lista de `Path`. Quando `storage` é fornecido, grava via
+    `StorageAdapter.write_parquet` sob `PROCESSED_BASE_PREFIX` e retorna uma
+    lista de chaves lógicas (strings).
     """
-    output_root = Path(output_dir)
-    output_root.mkdir(parents=True, exist_ok=True)
-
     if df.empty or "year" not in df.columns:
         return []
 
     df = df.copy()
     df["year"] = pd.to_numeric(df["year"], errors="coerce").astype("Int64")
 
-    output_paths: List[Path] = []
+    if storage is None:
+        output_root = Path(output_dir)
+        output_root.mkdir(parents=True, exist_ok=True)
 
+        output_paths: List[Path] = []
+        for year_value, df_year in df.groupby("year"):
+            if pd.isna(year_value):
+                continue
+            year_int = int(year_value)
+            year_dir = output_root / f"year={year_int}"
+            year_dir.mkdir(parents=True, exist_ok=True)
+
+            file_path = year_dir / "processed_wikipedia_co2_per_capita.parquet"
+            df_year.to_parquet(file_path, index=False)
+            output_paths.append(file_path)
+
+        return output_paths
+
+    keys: List[str] = []
     for year_value, df_year in df.groupby("year"):
         if pd.isna(year_value):
             continue
         year_int = int(year_value)
-        year_dir = output_root / f"year={year_int}"
-        year_dir.mkdir(parents=True, exist_ok=True)
+        key = f"{PROCESSED_BASE_PREFIX}/year={year_int}/processed_wikipedia_co2_per_capita.parquet"
+        storage.write_parquet(df_year, key)
+        keys.append(key)
 
-        file_path = year_dir / "processed_wikipedia_co2_per_capita.parquet"
-        df_year.to_parquet(file_path, index=False)
-        output_paths.append(file_path)
-
-    return output_paths
+    return keys
 
 
 def process_wikipedia_co2_raw_file(
@@ -359,20 +345,22 @@ def process_wikipedia_co2_raw_file(
     *,
     output_dir: Path | str = PROCESSED_OUTPUT_DIR,
     country_mapping: Optional[pd.DataFrame] = None,
-) -> List[Path]:
+    storage: Optional[StorageAdapter] = None,
+) -> List[Union[Path, str]]:
     """
-    Pipeline completo de processamento Wikipedia CO₂ (RAW -> PROCESSED Parquet).
+    Pipeline completo de processamento Wikipedia CO2 (RAW -> PROCESSED Parquet).
 
     - Lê o JSONL RAW produzido por `crawl_wikipedia_co2_raw`.
-    - Constrói o DataFrame PROCESSED com o schema definido na seção 2.2.
+    - Constrói o DataFrame PROCESSED com o schema definido no plano.
     - Aplica, opcionalmente, o mapping de países para preencher country_code.
     - Salva arquivos Parquet particionados por ano.
-
-    Retorna:
-        Lista de caminhos dos arquivos Parquet gerados.
     """
     df = build_wikipedia_co2_dataframe(raw_file_path, country_mapping=country_mapping)
-    return save_wikipedia_co2_parquet_partitions(df, output_dir=output_dir)
+    return save_wikipedia_co2_parquet_partitions(
+        df,
+        output_dir=output_dir,
+        storage=storage,
+    )
 
 
 if __name__ == "__main__":
@@ -382,7 +370,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(
         description=(
-            "Processa arquivo RAW da Wikipedia (CO₂ per capita) "
+            "Processa arquivo RAW da Wikipedia (CO2 per capita) "
             "em Parquet particionado por ano."
         ),
     )
@@ -411,6 +399,7 @@ if __name__ == "__main__":
 
 __all__ = [
     "PROCESSED_OUTPUT_DIR",
+    "PROCESSED_BASE_PREFIX",
     "WikipediaCO2ProcessedRecord",
     "normalize_country_name",
     "build_wikipedia_co2_dataframe",
