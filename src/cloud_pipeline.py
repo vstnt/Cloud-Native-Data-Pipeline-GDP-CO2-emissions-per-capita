@@ -200,7 +200,7 @@ def run_cloud_pipeline(
         storage=storage,
     )
     corr_path = build_correlation_summary(
-        curated_root=CURATED_ECON_ENVIRONMENT_OUTPUT_DIR,
+        curated_root=CURATED_ECON_ENV_OUTPUT_DIR,
         output_dir=ANALYSIS_OUTPUT_DIR,
         years=(2000, 2023),
         storage=storage,
