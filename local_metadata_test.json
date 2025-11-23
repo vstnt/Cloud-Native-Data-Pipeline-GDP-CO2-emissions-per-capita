@@ -1,0 +1,17 @@
+{
+  "runs": [
+    {
+      "ingestion_run_id": "52e44f62-096c-4ce8-b2e4-e44f82ccac20",
+      "run_scope": "world_bank_api",
+      "start_ts": "2025-11-23T15:50:50.330953+00:00",
+      "end_ts": "2025-11-23T15:50:50.333030+00:00",
+      "status": "SUCCESS",
+      "rows_processed": 42,
+      "last_checkpoint": "2023",
+      "error_message": null
+    }
+  ],
+  "checkpoints": {
+    "world_bank_api": "2023"
+  }
+}
