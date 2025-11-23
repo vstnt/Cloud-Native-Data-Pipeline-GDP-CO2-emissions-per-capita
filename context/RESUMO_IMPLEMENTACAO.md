@@ -335,3 +335,14 @@ Os adapters (`StorageAdapter`, `MetadataAdapter`, `S3StorageAdapter`, `DynamoMet
     - Paths relevantes (S3, DynamoDB, Lambda).
     - Decisões importantes de design (por exemplo, nomes de buckets, estrutura de prefixos, chaves de partição da tabela DynamoDB).
 
+
+## 13. Progresso recente na Parte 2 (cloud/AWS)
+
+Desde a versao inicial deste resumo, a parte 2 recebeu preparacao de codigo (entrypoint cloud, .env e adaptacao das transformacoes), mas os recursos AWS ainda nao foram criados.
+
+- Novo entrypoint cloud: src/cloud_pipeline.py (run_cloud_pipeline e lambda_handler), orquestrando a pipeline com S3StorageAdapter + DynamoMetadataAdapter e lendo variaveis PIPELINE_S3_BUCKET, PIPELINE_S3_BASE_PREFIX, PIPELINE_METADATA_TABLE.
+- Loader de .env: src/env_loader.py (load_dotenv_if_present), usado por cloud_pipeline, ingestion_api/world_bank_ingestion.py (WORLD_BANK_INDICATOR) e crawler/wikipedia_co2_crawler.py (WIKIPEDIA_URL).
+- Transformacoes prontas para ler RAW via StorageAdapter: world_bank_gdp_processed e wikipedia_co2_processed aceitam um StorageAdapter para ler JSONL (ex.: de S3).
+- Country mapping preparado para S3: country_mapping.py usa COUNTRY_MAPPING_BASE_PREFIX e pode montar o mapping a partir de Parquets lidos via StorageAdapter.
+
+Estado atual: o codigo esta pronto para ser empacotado em uma Lambda (handler cloud_pipeline.lambda_handler); falta apenas criar bucket S3, tabela DynamoDB, IAM Role e EventBridge, e configurar as mesmas variaveis de ambiente usadas no .env.

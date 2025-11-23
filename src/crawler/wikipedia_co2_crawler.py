@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
@@ -33,9 +34,16 @@ import requests
 from bs4 import BeautifulSoup
 
 from adapters import MetadataAdapter, StorageAdapter
+from env_loader import load_dotenv_if_present
 from metadata import WIKIPEDIA_CO2_SCOPE
 
-WIKIPEDIA_CO2_URL = "https://en.wikipedia.org/wiki/List_of_countries_by_carbon_dioxide_emissions_per_capita"
+# Carrega .env se existir (para WIKIPEDIA_URL, entre outros).
+load_dotenv_if_present()
+
+WIKIPEDIA_CO2_URL = os.getenv(
+    "WIKIPEDIA_URL",
+    "https://en.wikipedia.org/wiki/List_of_countries_by_carbon_dioxide_emissions_per_capita",
+)
 WIKIPEDIA_DATA_SOURCE = "wikipedia_co2"
 
 # Logical base prefix for RAW files (local FS or S3).
@@ -311,4 +319,3 @@ __all__ = [
     "parse_co2_table_rows",
     "crawl_wikipedia_co2_raw",
 ]
-

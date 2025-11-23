@@ -58,10 +58,17 @@ from analysis import (
     build_gdp_vs_co2_scatter,
 )
 from crawler.wikipedia_co2_crawler import crawl_wikipedia_co2_raw
+from env_loader import load_dotenv_if_present
 from ingestion_api.world_bank_ingestion import ingest_world_bank_gdp_raw
 from transformations import (
     WIKIPEDIA_CO2_PROCESSED_OUTPUT_DIR,
     WORLD_BANK_PROCESSED_OUTPUT_DIR,
+)
+from transformations.country_mapping import (
+    COUNTRY_MAPPING_BASE_PREFIX,
+    COUNTRY_MAPPING_OVERRIDES_CSV,
+    build_country_mapping_from_world_bank_parquet,
+    _apply_overrides,
 )
 from transformations.curated_econ_environment_country_year import (
     CURATED_OUTPUT_DIR as CURATED_ECON_ENV_OUTPUT_DIR,
@@ -71,13 +78,10 @@ from transformations.curated_econ_environment_country_year import (
 )
 from transformations.wikipedia_co2_processed import process_wikipedia_co2_raw_file
 from transformations.world_bank_gdp_processed import process_world_bank_gdp_raw_file
-from transformations.country_mapping import (
-    COUNTRY_MAPPING_BASE_PREFIX,
-    COUNTRY_MAPPING_OVERRIDES_CSV,
-    build_country_mapping_from_world_bank_parquet,
-    _apply_overrides,
-)
 
+
+# Carrega .env automaticamente em desenvolvimento/local, sem impactar AWS.
+load_dotenv_if_present()
 
 PIPELINE_S3_BUCKET_ENV = "PIPELINE_S3_BUCKET"
 PIPELINE_S3_BASE_PREFIX_ENV = "PIPELINE_S3_BASE_PREFIX"

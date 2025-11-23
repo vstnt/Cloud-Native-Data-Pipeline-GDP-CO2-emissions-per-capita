@@ -10,16 +10,21 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import requests
 
 from adapters import MetadataAdapter, StorageAdapter
+from env_loader import load_dotenv_if_present
 from metadata import WORLD_BANK_API_SCOPE
 
+# Carrega .env se existir (para WORLD_BANK_INDICATOR, entre outros).
+load_dotenv_if_present()
+
 WORLD_BANK_BASE_URL = "https://api.worldbank.org/v2/country/all/indicator"
-WORLD_BANK_INDICATOR_ID = "NY.GDP.PCAP.CD"
+WORLD_BANK_INDICATOR_ID = os.getenv("WORLD_BANK_INDICATOR", "NY.GDP.PCAP.CD")
 WORLD_BANK_CHECKPOINT_KEY = "last_year_loaded_world_bank"
 WORLD_BANK_DATA_SOURCE = "world_bank_api"
 
@@ -271,4 +276,3 @@ __all__ = [
     "compute_record_hash",
     "ingest_world_bank_gdp_raw",
 ]
-
