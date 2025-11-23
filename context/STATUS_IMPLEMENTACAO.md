@@ -8,7 +8,7 @@ Checklist alinhado aos "Grandes Passos da Implementação" (`context/Passos da i
 - [x] (2) Implementar módulo de METADATA (DynamoDB abstraction, local/mocked)
 - [x] (3) Implementar INGESTÃO da World Bank API (RAW)
 - [x] (4) Implementar PROCESSAMENTO da World Bank API (PROCESSED)
-- [ ] (5) Implementar CRAWLER da Wikipedia (RAW)
+- [x] (5) Implementar CRAWLER da Wikipedia (RAW)
 - [ ] (6) Implementar PROCESSAMENTO da tabela de CO₂
 - [ ] (7) Implementar a CURATED LAYER
 - [ ] (8) Implementar o Analytical Output

@@ -1,0 +1,25 @@
+{
+  "runs": [
+    {
+      "ingestion_run_id": "b5ac4008-6740-433e-ab46-f557376e32f5",
+      "run_scope": "wikipedia_co2",
+      "start_ts": "2025-11-23T16:21:37.882945+00:00",
+      "end_ts": "2025-11-23T16:21:38.399344+00:00",
+      "status": "FAILED",
+      "rows_processed": null,
+      "last_checkpoint": null,
+      "error_message": "403 Client Error: Forbidden for url: https://en.wikipedia.org/wiki/List_of_countries_by_carbon_dioxide_emissions_per_capita"
+    },
+    {
+      "ingestion_run_id": "a3c6bf52-ee99-4420-aee5-48f629bd6eef",
+      "run_scope": "wikipedia_co2",
+      "start_ts": "2025-11-23T16:21:51.752110+00:00",
+      "end_ts": "2025-11-23T16:21:52.770583+00:00",
+      "status": "SUCCESS",
+      "rows_processed": 210,
+      "last_checkpoint": null,
+      "error_message": null
+    }
+  ],
+  "checkpoints": {}
+}
