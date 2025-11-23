@@ -32,3 +32,4 @@ Notas da Parte 2 (atualização):
   - `template.yaml` (CloudFormation: Lambda + Role + EventBridge Rule).
   - `build_and_deploy.sh` (script para build→push ECR→deploy do stack).
 - Itens (13), (14) e (15) ficam prontos para deploy; dependem apenas de executar o script no WSL com AWS CLI + Docker.
+- Analytical Output agora também persiste em S3 (prefixo `analytics/<YYYYMMDD>/`) quando rodando via Lambda (StorageAdapter). Em execução local, continua a escrever em `analysis/`.

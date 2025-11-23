@@ -100,4 +100,4 @@ O arquivo `out.json` conterá o `statusCode` e um resumo dos artefatos.
 O evento da Lambda pode opcionalmente conter `min_year` e `max_year` para limitar o intervalo de anos da ingestão da World Bank.
 
 Observações:
-- Os artefatos analíticos são gravados no filesystem efêmero do Lambda (pasta `analysis/`). Isso é intencional no escopo do case; se quiser persistir esses artefatos em S3, posso adaptar para salvá‑los via `StorageAdapter` também.
+- A partir desta versão, os artefatos analíticos (PNG e CSV) também são salvos em S3 via `StorageAdapter` sob o prefixo `analytics/<YYYYMMDD>/...`. Em execução local, continuam sendo gravados na pasta `analysis/`.

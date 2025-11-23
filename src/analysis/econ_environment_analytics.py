@@ -20,6 +20,8 @@ Implements the "Analytical Output" section of the project plan:
 from __future__ import annotations
 
 from pathlib import Path
+from datetime import datetime, timezone
+import io
 from typing import Iterable, List, Tuple
 
 import matplotlib.pyplot as plt
@@ -35,6 +37,7 @@ CORRELATION_CSV_NAME = "correlation_summary.csv"
 
 # Prefixo lógico usado quando lido via StorageAdapter
 CURATED_BASE_PREFIX = "curated/env_econ_country_year"
+ANALYTICS_BASE_PREFIX = "analytics"
 
 
 def _load_curated_for_years(
@@ -108,7 +111,7 @@ def build_gdp_vs_co2_scatter(
     output_dir: Path | str = ANALYSIS_OUTPUT_DIR,
     year: int = 2023,
     storage: StorageAdapter | None = None,
-) -> Path:
+) -> Path | str:
     """
     Gera o scatterplot para o ano informado (default: 2023).
 
@@ -125,10 +128,6 @@ def build_gdp_vs_co2_scatter(
     ).copy()
     if df.empty:
         raise RuntimeError(f"No valid rows for scatter plot for year={year}")
-
-    output_root = Path(output_dir)
-    output_root.mkdir(parents=True, exist_ok=True)
-    output_path = output_root / SCATTER_PNG_NAME
 
     plt.figure(figsize=(10, 6))
 
@@ -148,10 +147,25 @@ def build_gdp_vs_co2_scatter(
     plt.grid(True, linestyle="--", alpha=0.3)
 
     plt.tight_layout()
-    plt.savefig(output_path, dpi=150)
-    plt.close()
 
-    return output_path
+    if storage is None:
+        # Local filesystem write
+        output_root = Path(output_dir)
+        output_root.mkdir(parents=True, exist_ok=True)
+        output_path = output_root / SCATTER_PNG_NAME
+        plt.savefig(output_path, dpi=150)
+        plt.close()
+        return output_path
+
+    # Write to S3 via StorageAdapter under analytics/<YYYYMMDD>/
+    snapshot_date = datetime.now(timezone.utc).strftime("%Y%m%d")
+    key = f"{ANALYTICS_BASE_PREFIX}/{snapshot_date}/{SCATTER_PNG_NAME}"
+    buf = io.BytesIO()
+    plt.savefig(buf, format="png", dpi=150)
+    plt.close()
+    buf.seek(0)
+    location = storage.write_raw(key, buf.getvalue())
+    return location
 
 
 def _format_top5_countries(
@@ -180,17 +194,16 @@ def build_correlation_summary(
     output_dir: Path | str = ANALYSIS_OUTPUT_DIR,
     years: Tuple[int, int] = (2000, 2023),
     storage: StorageAdapter | None = None,
-) -> Path:
+) -> Path | str:
     """
     Gera o artefato correlation_summary.csv, com uma linha por ano.
     """
     df_all = _load_curated_for_years(years, curated_root=curated_root, storage=storage)
     if df_all.empty:
-        # In a fresh S3 environment it is possible that the curated layer
-        # has not been generated yet for the requested years. Instead of
-        # failing the whole pipeline, emit an empty CSV and log a warning.
-        print(f"[analysis] No curated data available for years={years}; "
-              "generating empty correlation_summary.csv")
+        # Ambiente sem curated ainda; geramos CSV vazio.
+        print(
+            f"[analysis] No curated data available for years={years}; generating empty correlation_summary.csv",
+        )
         result_df = pd.DataFrame(
             columns=[
                 "year",
@@ -199,11 +212,19 @@ def build_correlation_summary(
                 "top5_countries_lowest_co2_per_1000usd_gdp",
             ]
         )
-        output_root = Path(output_dir)
-        output_root.mkdir(parents=True, exist_ok=True)
-        output_path = output_root / CORRELATION_CSV_NAME
-        result_df.to_csv(output_path, index=False)
-        return output_path
+        if storage is None:
+            output_root = Path(output_dir)
+            output_root.mkdir(parents=True, exist_ok=True)
+            output_path = output_root / CORRELATION_CSV_NAME
+            result_df.to_csv(output_path, index=False)
+            return output_path
+        else:
+            snapshot_date = datetime.now(timezone.utc).strftime("%Y%m%d")
+            key = f"{ANALYTICS_BASE_PREFIX}/{snapshot_date}/{CORRELATION_CSV_NAME}"
+            buf = io.StringIO()
+            result_df.to_csv(buf, index=False)
+            location = storage.write_raw(key, buf.getvalue().encode("utf-8"))
+            return location
 
     rows = []
     for year in years:
@@ -233,12 +254,19 @@ def build_correlation_summary(
 
     result_df = pd.DataFrame(rows)
 
-    output_root = Path(output_dir)
-    output_root.mkdir(parents=True, exist_ok=True)
-    output_path = output_root / CORRELATION_CSV_NAME
-
-    result_df.to_csv(output_path, index=False)
-    return output_path
+    if storage is None:
+        output_root = Path(output_dir)
+        output_root.mkdir(parents=True, exist_ok=True)
+        output_path = output_root / CORRELATION_CSV_NAME
+        result_df.to_csv(output_path, index=False)
+        return output_path
+    else:
+        snapshot_date = datetime.now(timezone.utc).strftime("%Y%m%d")
+        key = f"{ANALYTICS_BASE_PREFIX}/{snapshot_date}/{CORRELATION_CSV_NAME}"
+        buf = io.StringIO()
+        result_df.to_csv(buf, index=False)
+        location = storage.write_raw(key, buf.getvalue().encode("utf-8"))
+        return location
 
 
 if __name__ == "__main__":
