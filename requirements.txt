@@ -3,3 +3,4 @@ pandas
 pyarrow
 beautifulsoup4
 matplotlib
+boto3

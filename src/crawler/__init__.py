@@ -7,7 +7,7 @@ e gravar a camada RAW correspondente.
 """
 
 from .wikipedia_co2_crawler import (  # noqa: F401
-    RAW_OUTPUT_DIR as WIKIPEDIA_RAW_OUTPUT_DIR,
+    RAW_BASE_PREFIX,
     crawl_wikipedia_co2_raw,
     fetch_wikipedia_co2_html,
     find_co2_table_html,
@@ -15,10 +15,9 @@ from .wikipedia_co2_crawler import (  # noqa: F401
 )
 
 __all__ = [
-    "WIKIPEDIA_RAW_OUTPUT_DIR",
+    "RAW_BASE_PREFIX",
     "crawl_wikipedia_co2_raw",
     "fetch_wikipedia_co2_html",
     "find_co2_table_html",
     "parse_co2_table_rows",
 ]
-

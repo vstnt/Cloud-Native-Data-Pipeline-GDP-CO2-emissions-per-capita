@@ -27,6 +27,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from adapters import LocalMetadataAdapter, LocalStorageAdapter
 from analysis import (
     ANALYSIS_OUTPUT_DIR,
     build_correlation_summary,
@@ -73,13 +74,20 @@ def run_local_pipeline(
     """
     artefacts: Dict[str, List[Path]] = {}
 
+    # Local adapters backing the pipeline (filesystem + JSON metadata).
+    storage = LocalStorageAdapter()
+    metadata = LocalMetadataAdapter()
+
     # 1. World Bank ingestion (RAW)
     print("[1/7] Ingesting World Bank GDP RAW...")
-    raw_world_bank_path = ingest_world_bank_gdp_raw(
+    raw_world_bank_key = ingest_world_bank_gdp_raw(
+        storage,
+        metadata,
         min_year=min_year,
         max_year=max_year,
     )
-    artefacts["world_bank_raw"] = [Path(raw_world_bank_path)]
+    raw_world_bank_path = Path(raw_world_bank_key)
+    artefacts["world_bank_raw"] = [raw_world_bank_path]
     print(f"      RAW file: {raw_world_bank_path}")
 
     # 2. World Bank processing (PROCESSED)
@@ -98,8 +106,9 @@ def run_local_pipeline(
 
     # 4. Wikipedia crawler (RAW)
     print("[4/7] Crawling Wikipedia CO2 per capita (RAW)...")
-    raw_wikipedia_path = crawl_wikipedia_co2_raw()
-    artefacts["wikipedia_raw"] = [Path(raw_wikipedia_path)]
+    raw_wikipedia_key = crawl_wikipedia_co2_raw(storage, metadata)
+    raw_wikipedia_path = Path(raw_wikipedia_key)
+    artefacts["wikipedia_raw"] = [raw_wikipedia_path]
     print(f"      RAW file: {raw_wikipedia_path}")
 
     # 5. Wikipedia processing (PROCESSED, with country mapping)
@@ -167,4 +176,3 @@ if __name__ == "__main__":
 
 
 __all__ = ["run_local_pipeline"]
-

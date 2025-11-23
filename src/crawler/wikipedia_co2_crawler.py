@@ -1,23 +1,24 @@
 """
-Crawler da Wikipedia - CO2 emissions per capita (RAW).
+Wikipedia CO2 emissions per capita crawler (RAW layer).
 
-Responsabilidades (de acordo com o plano e os "Passos da implementação"):
-- Baixar HTML da página:
+Responsibilities (aligned with the project plan):
+
+- Download HTML from:
   https://en.wikipedia.org/wiki/List_of_countries_by_carbon_dioxide_emissions_per_capita
-- Identificar a tabela correta de emissões de CO2 per capita.
-- Detectar/tratar inconsistências básicas (footnotes, células vazias/traços)
-  ao montar uma representação em lista de linhas ("raw_table_json", ainda suja).
-- Salvar a camada RAW em JSONL com o seguinte schema (1.2 do plano):
+- Identify the main CO2 per capita emissions table.
+- Build a "raw_table_json" representation (still dirty).
+- Persist RAW layer in JSONL with the following schema:
     ingestion_run_id: string
-    ingestion_ts: timestamp
-    data_source: string (fixo "wikipedia_co2")
+    ingestion_ts: timestamp (ISO 8601, UTC)
+    data_source: string (fixed "wikipedia_co2")
     page_url: string
-    table_html: string (HTML bruto da tabela)
-    raw_table_json: JSON (lista de linhas ainda "suja")
-    record_hash: hash do registro original (SHA1)
-    raw_file_path: caminho do arquivo RAW gerado
+    table_html: string (HTML of the table)
+    raw_table_json: JSON (list of row dicts, still dirty)
+    record_hash: SHA1 hash of the payload
+    raw_file_path: logical key of the generated RAW file
 
-Este módulo é pensado para ser usado tanto localmente quanto em nuvem.
+Designed to run both locally (filesystem + JSON metadata) and in the cloud
+(S3 + DynamoDB) via the StorageAdapter and MetadataAdapter abstractions.
 """
 
 from __future__ import annotations
@@ -25,29 +26,24 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 from bs4 import BeautifulSoup
 
-from metadata import (
-    WIKIPEDIA_CO2_SCOPE,
-    end_run,
-    start_run,
-)
+from adapters import MetadataAdapter, StorageAdapter
+from metadata import WIKIPEDIA_CO2_SCOPE
 
 WIKIPEDIA_CO2_URL = "https://en.wikipedia.org/wiki/List_of_countries_by_carbon_dioxide_emissions_per_capita"
 WIKIPEDIA_DATA_SOURCE = "wikipedia_co2"
 
-# Diretório local de saída para camada RAW (pensando em mapear depois para S3/raw/)
-RAW_OUTPUT_DIR = Path("raw") / "wikipedia_co2"
+# Logical base prefix for RAW files (local FS or S3).
+RAW_BASE_PREFIX = "raw/wikipedia_co2"
 
 
 def _now_utc_iso() -> str:
-    """Retorna o horário atual em UTC em formato ISO 8601."""
+    """Return current UTC time in ISO 8601 format."""
     return datetime.now(timezone.utc).isoformat()
 
 
@@ -57,9 +53,9 @@ def fetch_wikipedia_co2_html(
     timeout: int = 30,
 ) -> str:
     """
-    Faz download do HTML bruto da página de CO2 per capita da Wikipedia.
+    Download the raw HTML of the CO2 per capita Wikipedia page.
 
-    Inclui um User-Agent explícito para evitar bloqueios 403.
+    Uses an explicit User-Agent to reduce the chance of 403s.
     """
     headers = {
         "User-Agent": "env-econ-pipeline/1.0 (+https://www.example.com/)",
@@ -71,32 +67,32 @@ def fetch_wikipedia_co2_html(
 
 def _clean_cell_text(text: str) -> str:
     """
-    Limpa o texto de uma célula da tabela, tratando algumas inconsistências:
+    Clean table cell text and handle a few inconsistencies:
 
-    - Remove marcas de footnote do tipo "[a]", "[1]", etc.
-    - Normaliza espaços em branco múltiplos.
-    - Mantém traços ("-") e valores vazios como estão (tratados no processed).
+    - Remove footnote markers like "[a]", "[1]", etc.
+    - Normalize whitespace.
     """
-    # Remove footnotes entre colchetes, ex.: "5.2[a]" -> "5.2"
     cleaned = re.sub(r"\[[^\]]*\]", "", text)
-    # Normaliza espaços
     cleaned = re.sub(r"\s+", " ", cleaned)
     return cleaned.strip()
 
 
-def find_co2_table_html(page_html: str) -> tuple[str, list[str]]:
+def find_co2_table_html(page_html: str) -> Tuple[str, List[str]]:
     """
-    Localiza a tabela principal de emissões de CO2 per capita na página.
+    Locate the main CO2 emissions per capita table in the page.
 
-    Retorna:
-        table_html: HTML bruto da tabela (string).
-        headers: lista de cabeçalhos das colunas extraídos da primeira linha.
+    Returns
+    -------
+    table_html:
+        Raw HTML of the table.
+    headers:
+        List of column headers extracted from the first row.
     """
     soup = BeautifulSoup(page_html, "html.parser")
 
     candidate_tables = soup.find_all("table", class_="wikitable")
     if not candidate_tables:
-        raise RuntimeError("Nenhuma tabela 'wikitable' encontrada na página da Wikipedia.")
+        raise RuntimeError("No 'wikitable' tables found in the Wikipedia page.")
 
     target_table = None
     for table in candidate_tables:
@@ -110,19 +106,18 @@ def find_co2_table_html(page_html: str) -> tuple[str, list[str]]:
         if "co2" in caption_text or "carbon dioxide" in caption_text:
             target_table = table
             break
-        # Fallback: procura por palavras-chave no próprio conteúdo da tabela.
+        # Fallback: look for keywords in the table content.
         if "co2" in header_text and "per capita" in header_text:
             target_table = table
             break
 
     if target_table is None:
-        # Se não encontramos pelo critério acima, caímos na primeira "wikitable"
+        # Fallback to the first wikitable.
         target_table = candidate_tables[0]
 
-    # Extrai cabeçalhos da primeira linha com <th> ou, se não houver, da primeira linha <tr>.
     header_row = target_table.find("tr")
     if not header_row:
-        raise RuntimeError("Tabela da Wikipedia não possui linha de cabeçalho (<tr>).")
+        raise RuntimeError("Target table has no header row (<tr>).")
 
     headers: List[str] = []
     for cell in header_row.find_all(["th", "td"]):
@@ -131,7 +126,7 @@ def find_co2_table_html(page_html: str) -> tuple[str, list[str]]:
             headers.append(header_text)
 
     if not headers:
-        raise RuntimeError("Não foi possível extrair cabeçalhos da tabela de CO2 da Wikipedia.")
+        raise RuntimeError("Failed to extract headers from the CO2 table.")
 
     table_html = str(target_table)
     return table_html, headers
@@ -139,20 +134,19 @@ def find_co2_table_html(page_html: str) -> tuple[str, list[str]]:
 
 def parse_co2_table_rows(table_html: str, headers: List[str]) -> List[Dict[str, Any]]:
     """
-    Converte o HTML da tabela em uma lista de linhas "sujas" (raw_table_json).
+    Convert the table HTML into a list of "raw" row dicts (raw_table_json).
 
-    - Cada linha é um dicionário: {<header>: <texto_da_célula>, ...}
-    - Células extras são ignoradas; células faltantes recebem valor None.
-    - Footnotes são removidos apenas do texto (ex.: "[a]", "[1]").
+    - Each row is a dict: {<header>: <cell_text>, ...}
+    - Extra cells are ignored; missing cells are set to None.
     """
     soup = BeautifulSoup(table_html, "html.parser")
     table = soup.find("table")
     if table is None:
-        raise RuntimeError("HTML fornecido não contém uma tag <table>.")
+        raise RuntimeError("Provided HTML does not contain a <table> tag.")
 
     rows: List[Dict[str, Any]] = []
     for tr in table.find_all("tr"):
-        # Ignora a linha de cabeçalho original
+        # Skip header row
         if tr.find("th"):
             continue
 
@@ -176,50 +170,53 @@ def parse_co2_table_rows(table_html: str, headers: List[str]) -> List[Dict[str, 
 
 def _compute_record_hash(payload: Dict[str, Any]) -> str:
     """
-    Calcula um hash SHA1 estável do payload RAW (sem campos de auditoria),
-    alinhado à estratégia aplicada na ingestão da World Bank API.
+    Compute a stable SHA1 hash of the RAW payload (without audit fields),
+    aligned with the strategy used for the World Bank ingestion.
     """
     normalized = json.dumps(payload, sort_keys=True, ensure_ascii=False)
     return hashlib.sha1(normalized.encode("utf-8")).hexdigest()
 
 
 def crawl_wikipedia_co2_raw(
+    storage: StorageAdapter,
+    metadata: MetadataAdapter,
     url: str = WIKIPEDIA_CO2_URL,
     *,
     timeout: int = 30,
     run_scope: str = WIKIPEDIA_CO2_SCOPE,
-) -> Path:
+) -> str:
     """
-    Executa o crawler da Wikipedia para CO2 per capita e persiste a camada RAW.
+    Execute the Wikipedia crawler for CO2 per capita and persist the RAW layer.
 
-    Passos:
-    - Inicia um run de metadata (escopo "wikipedia_co2").
-    - Faz download da página.
-    - Localiza a tabela principal de emissões per capita.
-    - Converte a tabela em lista de linhas (raw_table_json, ainda "suja").
-    - Calcule record_hash do payload bruto (HTML + JSON de linhas).
-    - Persiste o registro em JSONL em raw/wikipedia_co2/.
-    - Finaliza o run na tabela de metadata.
+    Steps:
+    - Start a metadata run (scope "wikipedia_co2").
+    - Download the page.
+    - Locate the main CO2 per capita table.
+    - Convert the table into a "raw_table_json" list of rows.
+    - Compute record_hash for the raw payload (HTML + JSON rows).
+    - Persist a single RAW record in JSONL under RAW_BASE_PREFIX.
+    - Finish the run in the metadata store.
 
-    Retorna:
-        Caminho do arquivo JSONL gerado.
+    Returns
+    -------
+    raw_key:
+        Logical key for the generated JSONL file, e.g.:
+        "raw/wikipedia_co2/wikipedia_co2_raw_<timestamp>.jsonl"
     """
-    RAW_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-    run_id = start_run(run_scope)
+    run_id = metadata.start_run(run_scope)
     ingestion_ts_iso = _now_utc_iso()
 
     try:
-        # 1. Download do HTML da página
+        # 1. Download the page HTML
         page_html = fetch_wikipedia_co2_html(url=url, timeout=timeout)
 
-        # 2. Encontrar tabela de CO2 per capita e cabeçalhos
+        # 2. Find CO2 per capita table and headers
         table_html, headers = find_co2_table_html(page_html)
 
-        # 3. Converter tabela em lista de linhas "sujas"
+        # 3. Convert the table into raw rows
         raw_table_rows = parse_co2_table_rows(table_html, headers)
 
-        # 4. Montar payload bruto e record_hash (sem campos de auditoria)
+        # 4. Build raw payload and record_hash (without audit fields)
         raw_payload = {
             "page_url": url,
             "headers": headers,
@@ -227,12 +224,12 @@ def crawl_wikipedia_co2_raw(
         }
         record_hash = _compute_record_hash(raw_payload)
 
-        # 5. Determinar caminho do arquivo RAW
+        # 5. Determine logical RAW key
         timestamp_for_filename = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        output_path = RAW_OUTPUT_DIR / f"wikipedia_co2_raw_{timestamp_for_filename}.jsonl"
-        raw_file_path_str = str(output_path)
+        key = f"{RAW_BASE_PREFIX}/wikipedia_co2_raw_{timestamp_for_filename}.jsonl"
+        raw_file_path_str = key
 
-        # 6. Construir registro RAW final alinhado ao schema 1.2
+        # 6. Build final RAW record aligned with schema 1.2
         raw_record: Dict[str, Any] = {
             "ingestion_run_id": run_id,
             "ingestion_ts": ingestion_ts_iso,
@@ -244,24 +241,23 @@ def crawl_wikipedia_co2_raw(
             "raw_file_path": raw_file_path_str,
         }
 
-        # 7. Persistir em JSONL (um registro por arquivo)
-        with output_path.open("w", encoding="utf-8") as f:
-            json.dump(raw_record, f, ensure_ascii=False)
-            f.write("\n")
+        # 7. Persist as JSONL (one record per file)
+        content = (json.dumps(raw_record, ensure_ascii=False) + "\n").encode("utf-8")
+        storage.write_raw(key, content)
 
         rows_processed = len(raw_table_rows)
 
-        # 8. Registrar fim do run
-        end_run(
+        # 8. Register run completion
+        metadata.end_run(
             run_id,
             status="SUCCESS",
             rows_processed=rows_processed,
             last_checkpoint=None,
         )
 
-        return output_path
+        return raw_file_path_str
     except Exception as exc:  # noqa: BLE001
-        end_run(
+        metadata.end_run(
             run_id,
             status="FAILED",
             error_message=str(exc),
@@ -270,9 +266,11 @@ def crawl_wikipedia_co2_raw(
 
 
 if __name__ == "__main__":
-    # Utilitário de linha de comando para rodar o crawler localmente:
+    # CLI helper for local runs:
     #   PYTHONPATH=src python -m crawler.wikipedia_co2_crawler
     import argparse
+
+    from adapters import LocalMetadataAdapter, LocalStorageAdapter
 
     parser = argparse.ArgumentParser(
         description="Crawler da Wikipedia para CO2 per capita (camada RAW).",
@@ -291,16 +289,26 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    output = crawl_wikipedia_co2_raw(url=args.url, timeout=args.timeout)
+
+    storage = LocalStorageAdapter()
+    metadata = LocalMetadataAdapter()
+
+    output = crawl_wikipedia_co2_raw(
+        storage,
+        metadata,
+        url=args.url,
+        timeout=args.timeout,
+    )
     print(output)
 
 
 __all__ = [
     "WIKIPEDIA_CO2_URL",
     "WIKIPEDIA_DATA_SOURCE",
-    "RAW_OUTPUT_DIR",
+    "RAW_BASE_PREFIX",
     "fetch_wikipedia_co2_html",
     "find_co2_table_html",
     "parse_co2_table_rows",
     "crawl_wikipedia_co2_raw",
 ]
+
