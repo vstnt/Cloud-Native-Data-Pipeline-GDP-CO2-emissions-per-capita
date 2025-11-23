@@ -6,7 +6,7 @@ Checklist alinhado aos "Grandes Passos da Implementação" (`context/Passos da i
 
 - [x] (1) Criar a estrutura de pastas do projeto
 - [x] (2) Implementar módulo de METADATA (DynamoDB abstraction, local/mocked)
-- [ ] (3) Implementar INGESTÃO da World Bank API (RAW)
+- [x] (3) Implementar INGESTÃO da World Bank API (RAW)
 - [ ] (4) Implementar PROCESSAMENTO da World Bank API (PROCESSED)
 - [ ] (5) Implementar CRAWLER da Wikipedia (RAW)
 - [ ] (6) Implementar PROCESSAMENTO da tabela de CO₂

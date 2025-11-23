@@ -4,7 +4,7 @@ Ingestão RAW da World Bank API (GDP per capita).
 Responsabilidades principais (de acordo com o plano):
 - Implementar ingestão da World Bank API para o indicador NY.GDP.PCAP.CD.
 - Aplicar lógica incremental baseada em checkpoint (last_year_loaded_world_bank).
-- Salvar dados RAW em formato JSONL.
+- Salvar dados RAW em formato JSONL, alinhado ao schema definido na seção RAW 1.1.
 - Calcular um record_hash para cada registro.
 
 Este módulo foi pensado para ser usado tanto localmente quanto,
@@ -25,21 +25,23 @@ import requests
 
 from metadata import (
     WORLD_BANK_API_SCOPE,
+    end_run,
     load_checkpoint,
     save_checkpoint,
     start_run,
-    end_run,
 )
 
 WORLD_BANK_BASE_URL = "https://api.worldbank.org/v2/country/all/indicator"
 WORLD_BANK_INDICATOR_ID = "NY.GDP.PCAP.CD"
 WORLD_BANK_CHECKPOINT_KEY = "last_year_loaded_world_bank"
+WORLD_BANK_DATA_SOURCE = "world_bank_api"
 
 # Diretório local de saída para camada RAW (pensando em mapear depois para S3/raw/)
 RAW_OUTPUT_DIR = Path("raw") / "world_bank_gdp"
 
 
 def _now_utc_iso() -> str:
+    """Retorna o horário atual em UTC em formato ISO 8601."""
     return datetime.now(timezone.utc).isoformat()
 
 
@@ -85,7 +87,12 @@ def fetch_all_indicator_records(
     Itera sobre todos os registros do indicador informado (todas as páginas).
     """
     page = 1
-    metadata, records = _fetch_indicator_page(indicator_id, page=page, per_page=per_page, timeout=timeout)
+    metadata, records = _fetch_indicator_page(
+        indicator_id,
+        page=page,
+        per_page=per_page,
+        timeout=timeout,
+    )
     total_pages = int(metadata.get("pages", 1))
 
     for record in records:
@@ -93,7 +100,12 @@ def fetch_all_indicator_records(
 
     while page < total_pages:
         page += 1
-        metadata, records = _fetch_indicator_page(indicator_id, page=page, per_page=per_page, timeout=timeout)
+        metadata, records = _fetch_indicator_page(
+            indicator_id,
+            page=page,
+            per_page=per_page,
+            timeout=timeout,
+        )
         for record in records:
             yield record
 
@@ -112,31 +124,12 @@ def list_indicator_years(indicator_id: str = WORLD_BANK_INDICATOR_ID) -> List[in
 
 def compute_record_hash(record: Dict[str, Any]) -> str:
     """
-    Calcula um hash estável do registro RAW, para controle/deduplicação.
-
-    Usa os campos principais esperados na resposta da World Bank API:
-    - indicator.id
-    - countryiso3code
-    - date
-    - value
+    Calcula um hash estável do registro RAW, para controle/deduplicação,
+    usando o JSON normalizado do registro original (sem campos de auditoria),
+    conforme sugerido no plano (MD5/SHA1 do payload).
     """
-    indicator_id = None
-    indicator = record.get("indicator")
-    if isinstance(indicator, dict):
-        indicator_id = indicator.get("id")
-
-    country_code = record.get("countryiso3code")
-    year = record.get("date")
-    value = record.get("value")
-
-    key_parts = [
-        indicator_id or "",
-        country_code or "",
-        str(year or ""),
-        str(value if value is not None else ""),
-    ]
-    base_string = "|".join(key_parts)
-    return hashlib.sha256(base_string.encode("utf-8")).hexdigest()
+    normalized = json.dumps(record, sort_keys=True, ensure_ascii=False)
+    return hashlib.sha1(normalized.encode("utf-8")).hexdigest()
 
 
 def _filter_records_by_years(
@@ -180,9 +173,9 @@ def ingest_world_bank_gdp_raw(
     - Recupera o checkpoint last_year_loaded_world_bank (se existir).
     - Busca todos os registros do indicador na API.
     - Filtra apenas anos > checkpoint (e dentro de [min_year, max_year], se informado).
-    - Enriquecer os registros com metadados e record_hash.
-    - Persistir em JSONL em raw/world_bank_gdp/.
-    - Atualizar checkpoint e registrar run via módulo de metadata.
+    - Enriquece os registros com metadados e record_hash.
+    - Persiste em JSONL em raw/world_bank_gdp/.
+    - Atualiza checkpoint e registra run via módulo de metadata.
 
     Retorna:
         Caminho do arquivo JSONL gerado.
@@ -218,6 +211,12 @@ def ingest_world_bank_gdp_raw(
             max_year_inclusive=max_year,
         )
 
+        # Determinar o arquivo de saída antes do enriquecimento, pois
+        # raw_file_path faz parte do schema RAW.
+        timestamp_for_filename = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        output_path = RAW_OUTPUT_DIR / f"world_bank_gdp_raw_{timestamp_for_filename}.jsonl"
+        raw_file_path_str = str(output_path)
+
         # 4. Enriquecer com metadados e record_hash
         enriched_records: List[Dict[str, Any]] = []
         max_ingested_year: Optional[int] = None
@@ -232,16 +231,20 @@ def ingest_world_bank_gdp_raw(
                 if max_ingested_year is None or record_year > max_ingested_year:
                     max_ingested_year = record_year
 
+            # JSON normalizado do payload RAW, usado tanto em raw_payload quanto
+            # no cálculo de record_hash (alinhado ao plano).
+            raw_payload = json.dumps(record, sort_keys=True, ensure_ascii=False)
+
             enriched = dict(record)
             enriched["ingestion_run_id"] = run_id
             enriched["ingestion_ts"] = ingestion_ts_iso
+            enriched["data_source"] = WORLD_BANK_DATA_SOURCE
+            enriched["raw_payload"] = raw_payload
             enriched["record_hash"] = compute_record_hash(record)
+            enriched["raw_file_path"] = raw_file_path_str
             enriched_records.append(enriched)
 
         # 5. Salvar em JSONL (mesmo se não houver registros, para rastreabilidade)
-        timestamp_for_filename = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        output_path = RAW_OUTPUT_DIR / f"world_bank_gdp_raw_{timestamp_for_filename}.jsonl"
-
         with output_path.open("w", encoding="utf-8") as f:
             for rec in enriched_records:
                 json.dump(rec, f, ensure_ascii=False)
@@ -277,6 +280,7 @@ __all__ = [
     "WORLD_BANK_BASE_URL",
     "WORLD_BANK_INDICATOR_ID",
     "WORLD_BANK_CHECKPOINT_KEY",
+    "WORLD_BANK_DATA_SOURCE",
     "RAW_OUTPUT_DIR",
     "fetch_all_indicator_records",
     "list_indicator_years",
