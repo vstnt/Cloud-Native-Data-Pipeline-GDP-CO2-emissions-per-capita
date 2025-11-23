@@ -25,3 +25,10 @@ Checklist alinhado aos "Grandes Passos da Implementação" (`context/Passos da i
 - [ ] (16) Testar execução na AWS
 - [ ] (17) Preencher os documentos finais
 
+Notas da Parte 2 (atualização):
+
+- Infraestrutura como código adicionada em `cloud/lambda/`:
+  - `Dockerfile` (Lambda container image com dependências).
+  - `template.yaml` (CloudFormation: Lambda + Role + EventBridge Rule).
+  - `build_and_deploy.sh` (script para build→push ECR→deploy do stack).
+- Itens (13), (14) e (15) ficam prontos para deploy; dependem apenas de executar o script no WSL com AWS CLI + Docker.

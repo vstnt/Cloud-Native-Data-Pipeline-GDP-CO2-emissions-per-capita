@@ -1,0 +1,135 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'GDP x CO2 Pipeline - Lambda (container image) + IAM + Schedule'
+
+Parameters:
+  StackNameSuffix:
+    Type: String
+    Default: gdp-co2
+    Description: Suffix to compose resource names for this stack.
+
+  ImageUri:
+    Type: String
+    Description: ECR Image URI for the Lambda function (e.g., 123456789012.dkr.ecr.us-east-1.amazonaws.com/gdp-co2-pipeline:latest)
+
+  PipelineBucketName:
+    Type: String
+    Description: Name of the S3 bucket for RAW/PROCESSED/CURATED data.
+
+  PipelineBasePrefix:
+    Type: String
+    Default: gdp-co2-pipeline
+    Description: Logical base prefix under the S3 bucket (optional but recommended).
+
+  MetadataTableName:
+    Type: String
+    Description: DynamoDB metadata table name (runs + checkpoints).
+
+  ScheduleExpression:
+    Type: String
+    Default: cron(0 2 * * ? *)
+    Description: EventBridge schedule to trigger the pipeline (default daily at 02:00 UTC). Use 'rate(1 day)' or a cron expression.
+
+  MemorySize:
+    Type: Number
+    Default: 2048
+    Description: Lambda memory size in MB.
+
+  Timeout:
+    Type: Number
+    Default: 900
+    Description: Lambda timeout in seconds (max 900s for standard Lambda).
+
+Resources:
+  PipelineLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-${StackNameSuffix}-lambda-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: S3AccessForPipeline
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource:
+                  - !Sub 'arn:aws:s3:::${PipelineBucketName}/${PipelineBasePrefix}/*'
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource:
+                  - !Sub 'arn:aws:s3:::${PipelineBucketName}'
+                Condition:
+                  StringLike:
+                    s3:prefix:
+                      - !Sub '${PipelineBasePrefix}/*'
+        - PolicyName: DynamoAccessForPipeline
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:GetItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:Scan
+                Resource:
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${MetadataTableName}'
+
+  PipelineLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-${StackNameSuffix}-lambda'
+      PackageType: Image
+      Code:
+        ImageUri: !Ref ImageUri
+      Role: !GetAtt PipelineLambdaRole.Arn
+      MemorySize: !Ref MemorySize
+      Timeout: !Ref Timeout
+      Architectures:
+        - x86_64
+      Environment:
+        Variables:
+          PIPELINE_S3_BUCKET: !Ref PipelineBucketName
+          PIPELINE_S3_BASE_PREFIX: !Ref PipelineBasePrefix
+          PIPELINE_METADATA_TABLE: !Ref MetadataTableName
+
+  PipelineScheduleRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${AWS::StackName}-${StackNameSuffix}-schedule'
+      ScheduleExpression: !Ref ScheduleExpression
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt PipelineLambda.Arn
+          Id: PipelineLambdaTarget
+
+  PermissionForEventsToInvokeLambda:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref PipelineLambda
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt PipelineScheduleRule.Arn
+
+Outputs:
+  LambdaFunctionName:
+    Value: !Ref PipelineLambda
+    Description: Name of the created Lambda function.
+  LambdaRoleArn:
+    Value: !GetAtt PipelineLambdaRole.Arn
+    Description: ARN of the Lambda execution role.
+  ScheduleArn:
+    Value: !GetAtt PipelineScheduleRule.Arn
+    Description: ARN of the EventBridge schedule rule.
+
