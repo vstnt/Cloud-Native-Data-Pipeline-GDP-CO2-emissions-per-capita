@@ -172,11 +172,9 @@ def end_run(
     if rows_processed is not None:
         target_run["rows_processed"] = int(rows_processed)
     if last_checkpoint is not None:
-        # Store as string for portability (aligns with DynamoDB string representation).
+        # Store as string for portabilidade (alinhado com representação string em DynamoDB).
         checkpoint_str = str(last_checkpoint)
         target_run["last_checkpoint"] = checkpoint_str
-        # Also persist in checkpoints map
-        save_checkpoint(target_run.get("run_scope", "unknown"), checkpoint_str, _store=store)
     if error_message is not None:
         target_run["error_message"] = error_message
 
@@ -287,4 +285,3 @@ def reset_local_store() -> Tuple[int, int]:
     _save_store(new_store)
 
     return runs_count, checkpoints_count
-

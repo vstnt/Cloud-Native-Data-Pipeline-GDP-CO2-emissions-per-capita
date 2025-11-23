@@ -1,0 +1,27 @@
+{
+  "runs": [
+    {
+      "ingestion_run_id": "78b5d801-6c1d-4dab-beda-11ce0b281379",
+      "run_scope": "world_bank_api",
+      "start_ts": "2025-11-23T15:55:45.279696+00:00",
+      "end_ts": "2025-11-23T15:55:58.278102+00:00",
+      "status": "SUCCESS",
+      "rows_processed": 266,
+      "last_checkpoint": "1960",
+      "error_message": null
+    },
+    {
+      "ingestion_run_id": "556c816b-d560-4175-9c08-63b6d9891dd5",
+      "run_scope": "world_bank_api",
+      "start_ts": "2025-11-23T15:55:58.283033+00:00",
+      "end_ts": "2025-11-23T15:56:11.172289+00:00",
+      "status": "SUCCESS",
+      "rows_processed": 0,
+      "last_checkpoint": "1960",
+      "error_message": null
+    }
+  ],
+  "checkpoints": {
+    "last_year_loaded_world_bank": "1960"
+  }
+}

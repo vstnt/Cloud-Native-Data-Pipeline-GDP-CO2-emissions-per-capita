@@ -5,7 +5,7 @@ Checklist alinhado aos "Grandes Passos da Implementação" (`context/Passos da i
 1. Parte 1 – Implementação LOCAL
 
 - [x] (1) Criar a estrutura de pastas do projeto
-- [ ] (2) Implementar módulo de METADATA (DynamoDB abstraction, local/mocked)
+- [x] (2) Implementar módulo de METADATA (DynamoDB abstraction, local/mocked)
 - [ ] (3) Implementar INGESTÃO da World Bank API (RAW)
 - [ ] (4) Implementar PROCESSAMENTO da World Bank API (PROCESSED)
 - [ ] (5) Implementar CRAWLER da Wikipedia (RAW)
