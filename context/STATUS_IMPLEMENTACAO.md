@@ -10,7 +10,7 @@ Checklist alinhado aos "Grandes Passos da Implementação" (`context/Passos da i
 - [x] (4) Implementar PROCESSAMENTO da World Bank API (PROCESSED)
 - [x] (5) Implementar CRAWLER da Wikipedia (RAW)
 - [x] (6) Implementar PROCESSAMENTO da tabela de CO₂
-- [ ] (7) Implementar a CURATED LAYER
+- [x] (7) Implementar a CURATED LAYER
 - [ ] (8) Implementar o Analytical Output
 - [ ] (9) Implementar a ORQUESTRAÇÃO LOCAL (entrypoint local)
 
@@ -24,4 +24,3 @@ Checklist alinhado aos "Grandes Passos da Implementação" (`context/Passos da i
 - [ ] (15) Criar regra EventBridge (agendamento diário)
 - [ ] (16) Testar execução na AWS
 - [ ] (17) Preencher os documentos finais
-

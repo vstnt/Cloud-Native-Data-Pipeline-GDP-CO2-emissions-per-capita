@@ -19,6 +19,16 @@
       "rows_processed": 210,
       "last_checkpoint": null,
       "error_message": null
+    },
+    {
+      "ingestion_run_id": "c91ecc4c-5ad5-422d-a2a2-696bacdf2b33",
+      "run_scope": "curated_join",
+      "start_ts": "2025-11-23T17:10:09.648047+00:00",
+      "end_ts": "2025-11-23T17:10:09.724242+00:00",
+      "status": "SUCCESS",
+      "rows_processed": 0,
+      "last_checkpoint": "snapshot_date=20251123",
+      "error_message": null
     }
   ],
   "checkpoints": {}
