@@ -11,7 +11,7 @@ Checklist alinhado aos "Grandes Passos da Implementação" (`context/Passos da i
 - [x] (5) Implementar CRAWLER da Wikipedia (RAW)
 - [x] (6) Implementar PROCESSAMENTO da tabela de CO₂
 - [x] (7) Implementar a CURATED LAYER
-- [ ] (8) Implementar o Analytical Output
+- [x] (8) Implementar o Analytical Output
 - [ ] (9) Implementar a ORQUESTRAÇÃO LOCAL (entrypoint local)
 
 2. Parte 2 — Preparar para levar à AWS (infra + adaptação do código)

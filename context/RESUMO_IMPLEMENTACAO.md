@@ -8,8 +8,8 @@ Documento de apoio para manter o contexto do que já foi implementado até o mom
   - `src/metadata` – abstração local de metadados/checkpoints (mock de DynamoDB).
   - `src/ingestion_api` – ingestão da World Bank API (camada RAW).
   - `src/crawler` – crawler da Wikipedia para CO₂ per capita (camada RAW).
-  - `src/transformations` – transformações para camada PROCESSED e CURATED (World Bank, Wikipedia e mapping de países).
-  - `src/analysis` – geração de artefatos analíticos (ainda por implementar).
+  - `src/transformations` – transformações para camadas PROCESSED e CURATED (World Bank, Wikipedia e mapping de países).
+  - `src/analysis` – geração de artefatos analíticos (Analytical Output).
   - `raw/` – arquivos de entrada em formato RAW (JSONL).
   - `processed/` – saídas processadas em formato Parquet, com particionamento por ano ou tipo de dado.
   - `curated/` – camada curated/analytical (join GDP × CO₂ por país-ano).
@@ -34,7 +34,7 @@ Essa estrutura está alinhada ao desenho proposto no plano (camadas RAW → PROC
   - `WORLD_BANK_API_SCOPE = "world_bank_api"`
   - `WIKIPEDIA_CO2_SCOPE = "wikipedia_co2"`
   - `CURATED_JOIN_SCOPE = "curated_join"`
-- Esse módulo já é utilizado pela ingestão da World Bank (`ingestion_api/world_bank_ingestion.py`) e pelo crawler da Wikipedia (`crawler/wikipedia_co2_crawler.py`), e agora também pela camada CURATED.
+- Esse módulo já é utilizado pela ingestão da World Bank (`ingestion_api/world_bank_ingestion.py`) e pelo crawler da Wikipedia (`crawler/wikipedia_co2_crawler.py`), e também pela camada CURATED.
 
 ## 3. Ingestão RAW da World Bank API (GDP per capita)
 
@@ -52,7 +52,7 @@ Essa estrutura está alinhada ao desenho proposto no plano (camadas RAW → PROC
     - Diretório: `raw/world_bank_gdp/`
     - Nome de arquivo: `world_bank_gdp_raw_<timestamp>.jsonl`.
   - Registro completo da execução em `local_metadata.json` (start_run/end_run com status, linhas processadas, checkpoint final).
-- Já existem arquivos RAW em `raw/world_bank_gdp/`, indicando que a ingestão foi testada/rodada localmente.
+- Há múltiplos arquivos RAW em `raw/world_bank_gdp/`, indicando que a ingestão foi testada/rodada localmente, inclusive para anos 2000–2023.
 
 ## 4. Processamento World Bank → camada PROCESSED
 
@@ -70,7 +70,7 @@ Essa estrutura está alinhada ao desenho proposto no plano (camadas RAW → PROC
   - `build_world_bank_gdp_dataframe(raw_file_path)`
   - `save_world_bank_gdp_parquet_partitions(df, output_dir=...)`
   - `process_world_bank_gdp_raw_file(raw_file_path, output_dir=...)`
-- Existem partições geradas em `processed/world_bank_gdp/year=1960/`, evidenciando execução local de teste.
+- Existem partições geradas para múltiplos anos, incluindo `processed/world_bank_gdp/year=1960/` e `year=2000..2023`, evidenciando execuções locais de teste.
 
 ## 5. Crawler RAW da Wikipedia (CO₂ per capita)
 
@@ -87,7 +87,7 @@ Essa estrutura está alinhada ao desenho proposto no plano (camadas RAW → PROC
     - Diretório: `raw/wikipedia_co2/`
     - Arquivo: `wikipedia_co2_raw_<timestamp>.jsonl`.
   - Uso do módulo `metadata` para registrar runs (`start_run` / `end_run` com `rows_processed`).
-- Já existe pelo menos um arquivo RAW em `raw/wikipedia_co2/`, resultado de execução local do crawler.
+- Há pelo menos um arquivo RAW em `raw/wikipedia_co2/`, resultado de execução local do crawler.
 
 ## 6. Processamento Wikipedia CO₂ → camada PROCESSED
 
@@ -112,7 +112,7 @@ Essa estrutura está alinhada ao desenho proposto no plano (camadas RAW → PROC
   - `build_wikipedia_co2_dataframe(raw_file_path, country_mapping=None)`
   - `save_wikipedia_co2_parquet_partitions(df, output_dir=...)`
   - `process_wikipedia_co2_raw_file(raw_file_path, output_dir=..., country_mapping=None)`
-- Já existem partições geradas em:
+- Atualmente existem partições geradas em:
   - `processed/wikipedia_co2/year=2000/`
   - `processed/wikipedia_co2/year=2023/`
 
@@ -141,7 +141,7 @@ Essa estrutura está alinhada ao desenho proposto no plano (camadas RAW → PROC
   - `save_country_mapping_parquet(mapping_df, output_dir=...)`
   - `build_and_save_country_mapping_from_world_bank(...)`
   - `load_country_mapping(path=None)` (usa o caminho padrão se não informado).
-- Já existe um arquivo `processed/country_mapping/country_mapping.parquet`, indicando que o pipeline foi rodado pelo menos uma vez.
+- Há um arquivo `processed/country_mapping/country_mapping.parquet`, indicando que o pipeline foi rodado pelo menos uma vez, e foi atualizado após a ingestão de 2000–2023.
 
 ## 8. Camada CURATED (Economic & Environmental by country-year)
 
@@ -177,14 +177,62 @@ Essa estrutura está alinhada ao desenho proposto no plano (camadas RAW → PROC
     - Persiste o DataFrame curated no layout particionado por ano + `snapshot_date`.
   - `build_and_save_curated_econ_environment_country_year(...)`
     - Pipeline completo da camada CURATED: abre um run no `metadata` com escopo `CURATED_JOIN_SCOPE`, constrói o DataFrame a partir do PROCESSED, salva os Parquet e registra `rows_processed` + checkpoint (`snapshot_date=YYYYMMDD`) em `local_metadata.json`.
-- Observação: com os dados de teste atuais, ainda não há interseção de anos entre o PROCESSED do World Bank (apenas 1960) e o PROCESSED da Wikipedia (2000/2023), então o curated gerado localmente fica vazio (0 linhas, mas com schema completo). Assim que forem processados anos 2000/2023 para GDP, o join passará a produzir linhas para esses anos.
+- Após reprocessar as camadas PROCESSED (World Bank 2000–2023 e Wikipedia com mapping aplicado), existem arquivos curated populados para:
+  - `curated/env_econ_country_year/year=2000/snapshot_date=20251123/...`
+  - `curated/env_econ_country_year/year=2023/snapshot_date=20251123/...`
+  com 164 linhas por ano (ex.: World, European Union, Afghanistan, etc.).
 
-## 9. Itens ainda não implementados (alto nível)
+## 9. Analytical Output (artefatos analíticos)
+
+- Localização: `src/analysis/econ_environment_analytics.py` e `src/analysis/__init__.py`.
+- Objetivo: gerar os artefatos analíticos descritos na seção “Analytical Output” do plano a partir do dataset curated:
+  - Artefato 1: `gdp_vs_co2_scatter.png`
+  - Artefato 2: `correlation_summary.csv`
+- Layout de saída (local, mas pensado para mapear facilmente a um prefixo S3):
+  - Diretório raiz de análise: `analysis/`
+  - Arquivos:
+    - `analysis/gdp_vs_co2_scatter.png`
+    - `analysis/correlation_summary.csv`
+- Dependência adicional: `matplotlib` (adicionada em `requirements.txt`) para geração do scatter.
+
+### 9.1 Scatterplot GDP vs CO₂ (gdp_vs_co2_scatter.png)
+
+- Função principal: `build_gdp_vs_co2_scatter(...)` (também acessível via CLI `python -m analysis.econ_environment_analytics`).
+- Fonte de dados: camada CURATED (`curated/env_econ_country_year`), filtrando apenas o ano 2023.
+- Configuração do gráfico:
+  - Eixo X: `gdp_per_capita_usd`
+  - Eixo Y: `co2_tons_per_capita`
+  - Cor dos pontos: `co2_per_1000usd_gdp` (colormap `viridis`)
+  - Título: `"GDP vs CO₂ per capita - 2023"`
+  - Grade leve para facilitar leitura.
+- Saída:
+  - Arquivo PNG salvo em `analysis/gdp_vs_co2_scatter.png`.
+  - Esse gráfico será utilizado na documentação/apresentação para ilustrar a relação entre renda per capita e emissões per capita em 2023, conforme pedido no plano.
+
+### 9.2 Correlation Summary (correlation_summary.csv)
+
+- Função principal: `build_correlation_summary(...)`.
+- Fonte de dados: camada CURATED para os anos 2000 e 2023.
+- Para cada ano, a função:
+  - Filtra linhas com `gdp_per_capita_usd` e `co2_tons_per_capita` válidos.
+  - Calcula `pearson_correlation_gdp_co2` usando correlação de Pearson entre GDP per capita e CO₂ per capita.
+  - Calcula:
+    - `top5_countries_highest_co2_per_1000usd_gdp`: países com maior `co2_per_1000usd_gdp` (top 5), como string com nomes separados por `;`.
+    - `top5_countries_lowest_co2_per_1000usd_gdp`: países com menor `co2_per_1000usd_gdp` (top 5), também separados por `;`.
+- Output:
+  - CSV salvo em `analysis/correlation_summary.csv` com colunas:
+    - `year`
+    - `pearson_correlation_gdp_co2`
+    - `top5_countries_highest_co2_per_1000usd_gdp`
+    - `top5_countries_lowest_co2_per_1000usd_gdp`
+  - Exemplo atual (já gerado com os dados locais):
+    - Para 2000 e 2023, com correlações ≈0.38 e listas de top 5 países em cada extremo de eficiência/ineficiência em CO₂ por 1000 USD de GDP.
+
+## 10. Itens ainda não implementados (alto nível)
 
 Com base em `context/STATUS_IMPLEMENTACAO.md` e no código atual:
 
 - Ainda não implementados / em aberto na Parte 1 (local):
-  - (8) Analytical Output (módulos em `src/analysis/` ainda vazios).
   - (9) Orquestração local (entrypoint que encadeia ingestão → processed → curated → análise).
 - Ainda não iniciados na Parte 2 (AWS):
   - S3 real (estrutura de buckets/prefixos).
@@ -192,11 +240,11 @@ Com base em `context/STATUS_IMPLEMENTACAO.md` e no código atual:
   - Lambda, IAM Role, EventBridge (agendamento) e testes de execução na nuvem.
   - Preenchimento da documentação final em `docs/final_documentation.md` e apresentação em `docs/presentation.pdf`.
 
-## 10. Como usar este resumo
+## 11. Como usar este resumo
 
 - `STATUS_IMPLEMENTACAO.md` responde a **quais grandes passos já foram concluídos**.
 - Este `RESUMO_IMPLEMENTACAO.md` responde a **como cada passo foi implementado e onde está no código/arquivos**.
-- À medida que avançarmos (por exemplo, implementando o Analytical Output e a orquestração local), podemos:
+- À medida que avançarmos (por exemplo, implementando a orquestração local e a parte AWS), podemos:
   - Marcar o item como concluído em `STATUS_IMPLEMENTACAO.md`.
-  - Adicionar uma subseção aqui descrevendo brevemente o que foi feito (módulos, paths, decisões importantes).
+  - Adicionar novas subseções aqui descrevendo brevemente o que foi feito (módulos, paths, decisões importantes).
 
