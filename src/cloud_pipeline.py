@@ -193,19 +193,31 @@ def run_cloud_pipeline(
 
     # 7. Analytical outputs (local filesystem, reading CURATED from S3)
     print("[cloud 7/7] Generating analytical outputs from CURATED (reading via S3)...")
-    scatter_path = build_gdp_vs_co2_scatter(
-        curated_root=CURATED_ECON_ENV_OUTPUT_DIR,
-        output_dir=ANALYSIS_OUTPUT_DIR,
-        year=2023,
-        storage=storage,
-    )
+    scatter_path = None
+    try:
+        scatter_path = build_gdp_vs_co2_scatter(
+            curated_root=CURATED_ECON_ENV_OUTPUT_DIR,
+            output_dir=ANALYSIS_OUTPUT_DIR,
+            year=2023,
+            storage=storage,
+        )
+    except RuntimeError as exc:
+        message = str(exc)
+        if message.startswith("No curated data available") or message.startswith(
+            "No valid rows for scatter plot",
+        ):
+            print(f"[cloud] Skipping scatter plot generation: {message}")
+        else:
+            raise
+
     corr_path = build_correlation_summary(
         curated_root=CURATED_ECON_ENV_OUTPUT_DIR,
         output_dir=ANALYSIS_OUTPUT_DIR,
         years=(2000, 2023),
         storage=storage,
     )
-    artefacts["analysis"] = [scatter_path, corr_path]
+    analysis_paths = [p for p in (scatter_path, corr_path) if p is not None]
+    artefacts["analysis"] = analysis_paths
 
     print("\nCloud pipeline completed successfully.")
     return artefacts

@@ -132,7 +132,9 @@ class DynamoMetadataAdapter(MetadataAdapter):
         from datetime import datetime, timezone
 
         key = {"pk": f"RUN#{ingestion_run_id}", "sk": "META"}
-        update_expr_parts = ["set #status = :status", "end_ts = :end_ts"]
+        # Build a valid DynamoDB UpdateExpression, e.g.:
+        #   SET #status = :status, end_ts = :end_ts, rows_processed = :rows, ...
+        update_assignments = ["#status = :status", "end_ts = :end_ts"]
         expr_attr_values: Dict[str, Any] = {
             ":status": status,
             ":end_ts": datetime.now(timezone.utc).isoformat(),
@@ -140,16 +142,16 @@ class DynamoMetadataAdapter(MetadataAdapter):
         expr_attr_names = {"#status": "status"}
 
         if rows_processed is not None:
-            update_expr_parts.append("rows_processed = :rows")
+            update_assignments.append("rows_processed = :rows")
             expr_attr_values[":rows"] = int(rows_processed)
         if last_checkpoint is not None:
-            update_expr_parts.append("last_checkpoint = :ckpt")
+            update_assignments.append("last_checkpoint = :ckpt")
             expr_attr_values[":ckpt"] = str(last_checkpoint)
         if error_message is not None:
-            update_expr_parts.append("error_message = :err")
+            update_assignments.append("error_message = :err")
             expr_attr_values[":err"] = error_message
 
-        update_expr = " ".join(update_expr_parts)
+        update_expr = "SET " + ", ".join(update_assignments)
         resp = self._table.update_item(
             Key=key,
             UpdateExpression=update_expr,
@@ -187,4 +189,3 @@ class DynamoMetadataAdapter(MetadataAdapter):
         if run_scope is None:
             return items
         return [item for item in items if item.get("run_scope") == run_scope]
-

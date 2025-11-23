@@ -66,7 +66,9 @@ def _load_curated_for_years(
                 frames.append(df)
     else:
         for year in years:
-            prefix = f"{CURATED_BASE_PREFIX}/year={year}/"
+            # Use prefix without trailing slash so that StorageAdapter.list_keys
+            # can normalise it consistently for different backends (e.g., S3).
+            prefix = f"{CURATED_BASE_PREFIX}/year={year}"
             keys = storage.list_keys(prefix)
             for key in keys:
                 if not key.endswith("curated_econ_environment_country_year.parquet"):
@@ -184,7 +186,24 @@ def build_correlation_summary(
     """
     df_all = _load_curated_for_years(years, curated_root=curated_root, storage=storage)
     if df_all.empty:
-        raise RuntimeError(f"No curated data available for years={years}")
+        # In a fresh S3 environment it is possible that the curated layer
+        # has not been generated yet for the requested years. Instead of
+        # failing the whole pipeline, emit an empty CSV and log a warning.
+        print(f"[analysis] No curated data available for years={years}; "
+              "generating empty correlation_summary.csv")
+        result_df = pd.DataFrame(
+            columns=[
+                "year",
+                "pearson_correlation_gdp_co2",
+                "top5_countries_highest_co2_per_1000usd_gdp",
+                "top5_countries_lowest_co2_per_1000usd_gdp",
+            ]
+        )
+        output_root = Path(output_dir)
+        output_root.mkdir(parents=True, exist_ok=True)
+        output_path = output_root / CORRELATION_CSV_NAME
+        result_df.to_csv(output_path, index=False)
+        return output_path
 
     rows = []
     for year in years:
@@ -282,4 +301,3 @@ __all__ = [
     "build_gdp_vs_co2_scatter",
     "build_correlation_summary",
 ]
-

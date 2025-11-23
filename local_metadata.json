@@ -1,240 +1,20 @@
 {
   "runs": [
     {
-      "ingestion_run_id": "b5ac4008-6740-433e-ab46-f557376e32f5",
-      "run_scope": "wikipedia_co2",
-      "start_ts": "2025-11-23T16:21:37.882945+00:00",
-      "end_ts": "2025-11-23T16:21:38.399344+00:00",
-      "status": "FAILED",
-      "rows_processed": null,
-      "last_checkpoint": null,
-      "error_message": "403 Client Error: Forbidden for url: https://en.wikipedia.org/wiki/List_of_countries_by_carbon_dioxide_emissions_per_capita"
-    },
-    {
-      "ingestion_run_id": "a3c6bf52-ee99-4420-aee5-48f629bd6eef",
-      "run_scope": "wikipedia_co2",
-      "start_ts": "2025-11-23T16:21:51.752110+00:00",
-      "end_ts": "2025-11-23T16:21:52.770583+00:00",
-      "status": "SUCCESS",
-      "rows_processed": 210,
-      "last_checkpoint": null,
-      "error_message": null
-    },
-    {
-      "ingestion_run_id": "c91ecc4c-5ad5-422d-a2a2-696bacdf2b33",
-      "run_scope": "curated_join",
-      "start_ts": "2025-11-23T17:10:09.648047+00:00",
-      "end_ts": "2025-11-23T17:10:09.724242+00:00",
-      "status": "SUCCESS",
-      "rows_processed": 0,
-      "last_checkpoint": "snapshot_date=20251123",
-      "error_message": null
-    },
-    {
-      "ingestion_run_id": "6314982f-ac4e-4ea2-b17f-5118741f397f",
+      "ingestion_run_id": "cfd0fee2-e74f-4d24-9eab-19b8ba3c4ef0",
       "run_scope": "world_bank_api",
-      "start_ts": "2025-11-23T17:15:59.960661+00:00",
-      "end_ts": "2025-11-23T17:16:13.741361+00:00",
+      "start_ts": "2025-11-23T22:03:59.474690+00:00",
+      "end_ts": "2025-11-23T22:04:14.241200+00:00",
       "status": "SUCCESS",
       "rows_processed": 6384,
       "last_checkpoint": "2023",
       "error_message": null
     },
     {
-      "ingestion_run_id": "8ed87959-6a32-484f-a991-5d074ccd0f28",
+      "ingestion_run_id": "65de961d-5040-4186-ab83-df4e9517d646",
       "run_scope": "curated_join",
-      "start_ts": "2025-11-23T17:16:18.448082+00:00",
-      "end_ts": "2025-11-23T17:16:18.588566+00:00",
-      "status": "SUCCESS",
-      "rows_processed": 0,
-      "last_checkpoint": "snapshot_date=20251123",
-      "error_message": null
-    },
-    {
-      "ingestion_run_id": "ddfe54da-4479-4e66-b60e-355c410633de",
-      "run_scope": "curated_join",
-      "start_ts": "2025-11-23T17:17:06.354987+00:00",
-      "end_ts": "2025-11-23T17:17:06.517391+00:00",
-      "status": "SUCCESS",
-      "rows_processed": 328,
-      "last_checkpoint": "snapshot_date=20251123",
-      "error_message": null
-    },
-    {
-      "ingestion_run_id": "8256f7e8-fe95-4ffe-85c0-032351c22ffd",
-      "run_scope": "world_bank_api",
-      "start_ts": "2025-11-23T17:25:02.495440+00:00",
-      "end_ts": "2025-11-23T17:25:20.301761+00:00",
-      "status": "SUCCESS",
-      "rows_processed": 0,
-      "last_checkpoint": "2023",
-      "error_message": null
-    },
-    {
-      "ingestion_run_id": "13926a83-4a60-4c09-bda7-2e2da73d8c82",
-      "run_scope": "wikipedia_co2",
-      "start_ts": "2025-11-23T17:25:20.486721+00:00",
-      "end_ts": "2025-11-23T17:25:21.509590+00:00",
-      "status": "SUCCESS",
-      "rows_processed": 210,
-      "last_checkpoint": null,
-      "error_message": null
-    },
-    {
-      "ingestion_run_id": "1bfe35e9-7be1-43c7-9e79-34869a4927bd",
-      "run_scope": "curated_join",
-      "start_ts": "2025-11-23T17:25:21.537259+00:00",
-      "end_ts": "2025-11-23T17:25:21.666685+00:00",
-      "status": "SUCCESS",
-      "rows_processed": 328,
-      "last_checkpoint": "snapshot_date=20251123",
-      "error_message": null
-    },
-    {
-      "ingestion_run_id": "74d4e390-6175-4ac4-94c6-528faf5ab056",
-      "run_scope": "world_bank_api",
-      "start_ts": "2025-11-23T17:53:12.412990+00:00",
-      "end_ts": "2025-11-23T17:53:27.326623+00:00",
-      "status": "SUCCESS",
-      "rows_processed": 0,
-      "last_checkpoint": "2023",
-      "error_message": null
-    },
-    {
-      "ingestion_run_id": "bef85e1d-f3d4-440c-a314-5ec9f5d21129",
-      "run_scope": "wikipedia_co2",
-      "start_ts": "2025-11-23T17:53:27.502437+00:00",
-      "end_ts": "2025-11-23T17:53:28.462534+00:00",
-      "status": "SUCCESS",
-      "rows_processed": 210,
-      "last_checkpoint": null,
-      "error_message": null
-    },
-    {
-      "ingestion_run_id": "6df604fc-bd2a-4fa5-86b0-ac8198dfaa73",
-      "run_scope": "curated_join",
-      "start_ts": "2025-11-23T17:53:28.485896+00:00",
-      "end_ts": "2025-11-23T17:53:28.588279+00:00",
-      "status": "SUCCESS",
-      "rows_processed": 328,
-      "last_checkpoint": "snapshot_date=20251123",
-      "error_message": null
-    },
-    {
-      "ingestion_run_id": "08f540d5-6f1d-43b1-96bb-5620aaac6821",
-      "run_scope": "world_bank_api",
-      "start_ts": "2025-11-23T18:16:03.537400+00:00",
-      "end_ts": "2025-11-23T18:16:16.629506+00:00",
-      "status": "SUCCESS",
-      "rows_processed": 0,
-      "last_checkpoint": "2023",
-      "error_message": null
-    },
-    {
-      "ingestion_run_id": "dbd8ee1d-5651-4cad-89c5-1be6e405705b",
-      "run_scope": "wikipedia_co2",
-      "start_ts": "2025-11-23T18:16:16.819683+00:00",
-      "end_ts": "2025-11-23T18:16:17.881393+00:00",
-      "status": "SUCCESS",
-      "rows_processed": 210,
-      "last_checkpoint": null,
-      "error_message": null
-    },
-    {
-      "ingestion_run_id": "e79aeaa9-fb71-4e0b-93bf-2ffcc7a86d67",
-      "run_scope": "curated_join",
-      "start_ts": "2025-11-23T18:16:17.905356+00:00",
-      "end_ts": "2025-11-23T18:16:18.032651+00:00",
-      "status": "SUCCESS",
-      "rows_processed": 328,
-      "last_checkpoint": "snapshot_date=20251123",
-      "error_message": null
-    },
-    {
-      "ingestion_run_id": "e6c9cb6e-1af6-4cc5-8eda-5452ba3e7547",
-      "run_scope": "world_bank_api",
-      "start_ts": "2025-11-23T18:42:36.515233+00:00",
-      "end_ts": "2025-11-23T18:42:52.422859+00:00",
-      "status": "SUCCESS",
-      "rows_processed": 266,
-      "last_checkpoint": "2024",
-      "error_message": null
-    },
-    {
-      "ingestion_run_id": "9c66a440-3bfc-4120-a988-d10b9350be66",
-      "run_scope": "wikipedia_co2",
-      "start_ts": "2025-11-23T18:42:52.593206+00:00",
-      "end_ts": "2025-11-23T18:42:53.571528+00:00",
-      "status": "SUCCESS",
-      "rows_processed": 210,
-      "last_checkpoint": null,
-      "error_message": null
-    },
-    {
-      "ingestion_run_id": "364a6967-9e35-4a21-ac19-231644c6bb94",
-      "run_scope": "curated_join",
-      "start_ts": "2025-11-23T18:42:53.620566+00:00",
-      "end_ts": "2025-11-23T18:42:53.809872+00:00",
-      "status": "SUCCESS",
-      "rows_processed": 328,
-      "last_checkpoint": "snapshot_date=20251123",
-      "error_message": null
-    },
-    {
-      "ingestion_run_id": "4bb94330-862b-48d6-aa1c-484044b75a9a",
-      "run_scope": "world_bank_api",
-      "start_ts": "2025-11-23T19:24:51.451413+00:00",
-      "end_ts": "2025-11-23T19:25:06.770474+00:00",
-      "status": "SUCCESS",
-      "rows_processed": 0,
-      "last_checkpoint": "2024",
-      "error_message": null
-    },
-    {
-      "ingestion_run_id": "6b0a0a5d-ab18-4545-b62b-c20f500a59b4",
-      "run_scope": "wikipedia_co2",
-      "start_ts": "2025-11-23T19:25:06.964621+00:00",
-      "end_ts": "2025-11-23T19:25:08.006999+00:00",
-      "status": "SUCCESS",
-      "rows_processed": 210,
-      "last_checkpoint": null,
-      "error_message": null
-    },
-    {
-      "ingestion_run_id": "84443da1-d9c5-4b03-9592-fcee91fafd41",
-      "run_scope": "curated_join",
-      "start_ts": "2025-11-23T19:25:08.031990+00:00",
-      "end_ts": "2025-11-23T19:25:08.142576+00:00",
-      "status": "SUCCESS",
-      "rows_processed": 328,
-      "last_checkpoint": "snapshot_date=20251123",
-      "error_message": null
-    },
-    {
-      "ingestion_run_id": "c0db54e3-ad9b-4cfd-a6c2-f4c8ebb5aa8f",
-      "run_scope": "world_bank_api",
-      "start_ts": "2025-11-23T19:27:11.889906+00:00",
-      "end_ts": "2025-11-23T19:27:25.142681+00:00",
-      "status": "SUCCESS",
-      "rows_processed": 0,
-      "last_checkpoint": "2024",
-      "error_message": null
-    },
-    {
-      "ingestion_run_id": "74a2e5c0-52dd-43b7-9bd4-1a6557b87702",
-      "run_scope": "wikipedia_co2",
-      "start_ts": "2025-11-23T19:27:25.333763+00:00",
-      "end_ts": "2025-11-23T19:27:26.390165+00:00",
-      "status": "SUCCESS",
-      "rows_processed": 210,
-      "last_checkpoint": null,
-      "error_message": null
-    },
-    {
-      "ingestion_run_id": "1dc3d06b-c165-48e0-8830-e883d5e1cf85",
-      "run_scope": "curated_join",
-      "start_ts": "2025-11-23T19:27:26.413680+00:00",
-      "end_ts": "2025-11-23T19:27:26.526817+00:00",
+      "start_ts": "2025-11-23T22:14:30.658817+00:00",
+      "end_ts": "2025-11-23T22:14:36.512092+00:00",
       "status": "SUCCESS",
       "rows_processed": 328,
       "last_checkpoint": "snapshot_date=20251123",
@@ -242,6 +22,6 @@
     }
   ],
   "checkpoints": {
-    "last_year_loaded_world_bank": "2024"
+    "last_year_loaded_world_bank": "2023"
   }
 }
