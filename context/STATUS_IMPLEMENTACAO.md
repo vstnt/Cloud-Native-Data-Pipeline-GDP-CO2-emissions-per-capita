@@ -16,9 +16,9 @@ Checklist alinhado aos "Grandes Passos da Implementação" (`context/Passos da i
 
 ## 2. Parte 2 – Preparar para levar à AWS (infra + adaptação do código)
 
-- [ ] (10) Criar bucket S3 e projetar a estrutura de prefixos
-- [ ] (11) Criar tabela DynamoDB real
-- [ ] (12) Ajustar caminho dos arquivos para S3
+- [x] (10) Criar bucket S3 e projetar a estrutura de prefixos
+- [x] (11) Criar tabela DynamoDB real
+- [x] (12) Ajustar caminho dos arquivos para S3
 - [ ] (13) Criar função AWS Lambda
 - [ ] (14) Criar IAM Role do Lambda
 - [ ] (15) Criar regra EventBridge (agendamento diário)
