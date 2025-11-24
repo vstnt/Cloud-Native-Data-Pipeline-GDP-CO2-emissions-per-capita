@@ -269,7 +269,7 @@ Notes:
   - Curated builder wraps its own run in `try/except`; on failure marks `FAILED`; on success always records a snapshot checkpoint, even with zero rows.
 
 - Analytics
-  - Scatter plot: gracefully skipped when curated data is missing or lacks valid rows; correlation summary writes an empty CSV in that scenario.
+  - Scatter plot: gracefully skipped when curated data is missing or lacks valid rows; correlation summary writes an empty CSV in that scenario. Analytics read only the most recent curated snapshot per year to avoid duplicate country entries across snapshots.
 
 ## Pagination Strategies
 

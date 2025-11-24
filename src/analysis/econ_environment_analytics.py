@@ -25,6 +25,7 @@ import io
 from typing import Iterable, List, Tuple
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 
 from adapters import StorageAdapter
@@ -40,18 +41,36 @@ CURATED_BASE_PREFIX = "curated/env_econ_country_year"
 ANALYTICS_BASE_PREFIX = "analytics"
 
 
+def _extract_snapshot_date_from_path(path_like: str) -> str | None:
+    """Best‑effort extraction of snapshot_date=YYYYMMDD from a key/path.
+
+    Works for both local file paths and S3 keys. Returns the 8‑digit
+    snapshot date or None when not found.
+    """
+    parts = str(path_like).replace("\\", "/").split("/")
+    for p in parts:
+        if p.startswith("snapshot_date="):
+            return p.split("=", 1)[1]
+    return None
+
+
 def _load_curated_for_years(
     years: Iterable[int],
     *,
     curated_root: Path | str = CURATED_ECON_ENVIRONMENT_OUTPUT_DIR,
     storage: StorageAdapter | None = None,
+    latest_snapshot_only: bool = True,
 ) -> pd.DataFrame:
     """
-    Carrega dados CURATED para os anos informados, agregando todos os snapshots.
+    Carrega dados CURATED para os anos informados.
 
-    Layout esperado (local):
-        curated/env_econ_country_year/year=<year>/snapshot_date=<YYYYMMDD>/
-            curated_econ_environment_country_year.parquet
+    Por padrão, usa apenas o snapshot mais recente de cada ano
+    (latest_snapshot_only=True) para evitar duplicidade de países
+    quando existem múltiplos snapshots.
+
+    Layout (local):
+      curated/env_econ_country_year/year=<year>/snapshot_date=<YYYYMMDD>/
+        curated_econ_environment_country_year.parquet
 
     Quando `storage` é fornecido, o carregamento é feito via StorageAdapter
     usando o prefixo CURATED_BASE_PREFIX.
@@ -64,18 +83,34 @@ def _load_curated_for_years(
             year_dir = curated_root / f"year={year}"
             if not year_dir.exists():
                 continue
-            for path in year_dir.rglob("curated_econ_environment_country_year.parquet"):
+            candidates = list(year_dir.rglob("curated_econ_environment_country_year.parquet"))
+            if not candidates:
+                continue
+            if latest_snapshot_only:
+                # Choose the file under the highest snapshot_date=YYYYMMDD
+                def snap(p: Path) -> str:
+                    s = _extract_snapshot_date_from_path(str(p))
+                    return s or ""
+
+                candidates.sort(key=lambda p: snap(p))
+                candidates = [candidates[-1]]
+            for path in candidates:
                 df = pd.read_parquet(path)
                 frames.append(df)
     else:
         for year in years:
-            # Use prefix without trailing slash so that StorageAdapter.list_keys
-            # can normalise it consistently for different backends (e.g., S3).
             prefix = f"{CURATED_BASE_PREFIX}/year={year}"
-            keys = storage.list_keys(prefix)
+            keys = [
+                k
+                for k in storage.list_keys(prefix)
+                if k.endswith("curated_econ_environment_country_year.parquet")
+            ]
+            if not keys:
+                continue
+            if latest_snapshot_only:
+                keys.sort(key=lambda k: _extract_snapshot_date_from_path(k) or "")
+                keys = [keys[-1]]
             for key in keys:
-                if not key.endswith("curated_econ_environment_country_year.parquet"):
-                    continue
                 df = storage.read_parquet(key)
                 frames.append(df)
 
@@ -102,6 +137,11 @@ def _load_curated_for_years(
     if "country_name" in df_all.columns:
         df_all["country_name"] = df_all["country_name"].astype("string")
 
+    # Garantir unicidade por (country_code, year) quando possível.
+    dedup_keys = [c for c in ["country_code", "year"] if c in df_all.columns]
+    if dedup_keys:
+        df_all = df_all.sort_values(dedup_keys).drop_duplicates(dedup_keys, keep="last")
+
     return df_all
 
 
@@ -111,6 +151,8 @@ def build_gdp_vs_co2_scatter(
     output_dir: Path | str = ANALYSIS_OUTPUT_DIR,
     year: int = 2023,
     storage: StorageAdapter | None = None,
+    annotate_outliers: bool = True,
+    outliers_top_n: int = 5,
 ) -> Path | str:
     """
     Gera o scatterplot para o ano informado (default: 2023).
@@ -131,9 +173,12 @@ def build_gdp_vs_co2_scatter(
 
     plt.figure(figsize=(10, 6))
 
+    x = df["gdp_per_capita_usd"].to_numpy()
+    y = df["co2_tons_per_capita"].to_numpy()
+
     scatter = plt.scatter(
-        df["gdp_per_capita_usd"],
-        df["co2_tons_per_capita"],
+        x,
+        y,
         c=df["co2_per_1000usd_gdp"],
         cmap="viridis",
         alpha=0.8,
@@ -143,6 +188,44 @@ def build_gdp_vs_co2_scatter(
     plt.colorbar(scatter, label="CO2 per 1000 USD GDP")
     plt.xlabel("GDP per capita (USD)")
     plt.ylabel("CO2 tons per capita")
+    # Linear regression (1st degree) + R²
+    try:
+        if len(x) >= 2:
+            slope, intercept = np.polyfit(x, y, 1)
+            x_line = np.linspace(np.nanmin(x), np.nanmax(x), 200)
+            y_line = slope * x_line + intercept
+            # R² = Pearson^2
+            r = pd.Series(x).corr(pd.Series(y), method="pearson")
+            r2 = float(r ** 2) if pd.notna(r) else float("nan")
+            plt.plot(
+                x_line,
+                y_line,
+                color="crimson",
+                linewidth=2,
+                label=f"Linear fit (R²={r2:.2f})",
+            )
+
+            if annotate_outliers and outliers_top_n > 0:
+                y_pred = slope * x + intercept
+                resid = np.abs(y - y_pred)
+                # pick top-N residuals
+                top_idx = np.argsort(-resid)[:outliers_top_n]
+                for i in top_idx:
+                    name = str(df.iloc[i]["country_name"]) if "country_name" in df.columns else ""
+                    plt.annotate(
+                        name,
+                        (x[i], y[i]),
+                        textcoords="offset points",
+                        xytext=(5, 5),
+                        fontsize=8,
+                        color="black",
+                        alpha=0.8,
+                    )
+            plt.legend(frameon=False)
+    except Exception as e:
+        # Non-blocking: proceed without regression if anything goes wrong
+        print(f"[analysis] Regression fit skipped due to: {e}")
+
     plt.title(f"GDP vs CO2 per capita - {year}")
     plt.grid(True, linestyle="--", alpha=0.3)
 
@@ -174,7 +257,8 @@ def _format_top5_countries(
     ascending: bool,
 ) -> str:
     """
-    Monta a string de top5 países baseada em co2_per_1000usd_gdp.
+    Monta a string de top5 países baseada em co2_per_1000usd_gdp,
+    incluindo o valor formatado (ex.: "País: 1.234").
     """
     df_valid = df.dropna(subset=["co2_per_1000usd_gdp", "country_name"]).copy()
     if df_valid.empty:
@@ -184,8 +268,14 @@ def _format_top5_countries(
         by="co2_per_1000usd_gdp",
         ascending=ascending,
     ).head(5)
-    names = df_sorted["country_name"].astype(str).tolist()
-    return ";".join(names)
+    entries = [
+        f"{name}: {val:.3f}"
+        for name, val in zip(
+            df_sorted["country_name"].astype(str).tolist(),
+            df_sorted["co2_per_1000usd_gdp"].astype(float).tolist(),
+        )
+    ]
+    return ";".join(entries)
 
 
 def build_correlation_summary(

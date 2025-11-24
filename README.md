@@ -30,7 +30,7 @@ Run sequence (Lambda):
 4) Wikipedia crawler (RAW → S3)
 5) Wikipedia processing (PROCESSED → S3)
 6) CURATED join (CURATED → S3)
-7) Analytical outputs (PNG/CSV → S3 `analytics/`)
+7) Analytical outputs (PNG/CSV → S3 `analytics/` — computed from the latest curated snapshot per year)
 
 Note: the scatter plot may be skipped automatically when curated data is
 not available or contains no valid rows for the selected year (see
