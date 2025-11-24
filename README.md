@@ -38,6 +38,12 @@ not available or contains no valid rows for the selected year (see
 
 Main modules: `src/cloud_pipeline.py`, `src/adapters/*`, `src/ingestion_api/*`, `src/crawler/*`, `src/transformations/*`, `src/analysis/*`.
 
+### Analytical Outputs
+
+- `gdp_vs_co2_scatter.png` — Dispersão (2023) com linha de tendência (regressão linear) e R² no rótulo. Principais outliers são anotados automaticamente.
+- `correlation_summary.csv` — Para 2000 e 2023: correlação de Pearson e top5 de maior/menor `co2_per_1000usd_gdp` já com os valores (ex.: "País: 1.234").
+- Opcional: exportar também para XLSX ao chamar `build_correlation_summary(..., write_xlsx=True)`; requer `openpyxl`.
+
 ## Chosen Cloud Services & Justification
 
 - AWS Lambda (Container Image)

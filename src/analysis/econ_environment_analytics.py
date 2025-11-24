@@ -35,6 +35,7 @@ from transformations import CURATED_ECON_ENVIRONMENT_OUTPUT_DIR
 ANALYSIS_OUTPUT_DIR = Path("analysis")
 SCATTER_PNG_NAME = "gdp_vs_co2_scatter.png"
 CORRELATION_CSV_NAME = "correlation_summary.csv"
+CORRELATION_XLSX_NAME = "correlation_summary.xlsx"
 
 # Prefixo lógico usado quando lido via StorageAdapter
 CURATED_BASE_PREFIX = "curated/env_econ_country_year"
@@ -284,6 +285,7 @@ def build_correlation_summary(
     output_dir: Path | str = ANALYSIS_OUTPUT_DIR,
     years: Tuple[int, int] = (2000, 2023),
     storage: StorageAdapter | None = None,
+    write_xlsx: bool = False,
 ) -> Path | str:
     """
     Gera o artefato correlation_summary.csv, com uma linha por ano.
@@ -307,6 +309,14 @@ def build_correlation_summary(
             output_root.mkdir(parents=True, exist_ok=True)
             output_path = output_root / CORRELATION_CSV_NAME
             result_df.to_csv(output_path, index=False)
+            # Optional XLSX export (local only)
+            if write_xlsx:
+                try:
+                    import openpyxl  # noqa: F401
+                    xlsx_path = output_root / CORRELATION_XLSX_NAME
+                    result_df.to_excel(xlsx_path, index=False)
+                except Exception as e:
+                    print(f"[analysis] Skipping XLSX export (dependency missing or error): {e}")
             return output_path
         else:
             snapshot_date = datetime.now(timezone.utc).strftime("%Y%m%d")
@@ -314,6 +324,18 @@ def build_correlation_summary(
             buf = io.StringIO()
             result_df.to_csv(buf, index=False)
             location = storage.write_raw(key, buf.getvalue().encode("utf-8"))
+            if write_xlsx:
+                try:
+                    import openpyxl  # noqa: F401
+                    from io import BytesIO
+                    bbuf = BytesIO()
+                    with pd.ExcelWriter(bbuf, engine="openpyxl") as writer:
+                        result_df.to_excel(writer, index=False, sheet_name="summary")
+                    bbuf.seek(0)
+                    xlsx_key = f"{ANALYTICS_BASE_PREFIX}/{snapshot_date}/{CORRELATION_XLSX_NAME}"
+                    storage.write_raw(xlsx_key, bbuf.getvalue())
+                except Exception as e:
+                    print(f"[analysis] Skipping XLSX export to storage: {e}")
             return location
 
     rows = []
@@ -349,6 +371,13 @@ def build_correlation_summary(
         output_root.mkdir(parents=True, exist_ok=True)
         output_path = output_root / CORRELATION_CSV_NAME
         result_df.to_csv(output_path, index=False)
+        if write_xlsx:
+            try:
+                import openpyxl  # noqa: F401
+                xlsx_path = output_root / CORRELATION_XLSX_NAME
+                result_df.to_excel(xlsx_path, index=False)
+            except Exception as e:
+                print(f"[analysis] Skipping XLSX export (dependency missing or error): {e}")
         return output_path
     else:
         snapshot_date = datetime.now(timezone.utc).strftime("%Y%m%d")
@@ -356,6 +385,18 @@ def build_correlation_summary(
         buf = io.StringIO()
         result_df.to_csv(buf, index=False)
         location = storage.write_raw(key, buf.getvalue().encode("utf-8"))
+        if write_xlsx:
+            try:
+                import openpyxl  # noqa: F401
+                from io import BytesIO
+                bbuf = BytesIO()
+                with pd.ExcelWriter(bbuf, engine="openpyxl") as writer:
+                    result_df.to_excel(writer, index=False, sheet_name="summary")
+                bbuf.seek(0)
+                xlsx_key = f"{ANALYTICS_BASE_PREFIX}/{snapshot_date}/{CORRELATION_XLSX_NAME}"
+                storage.write_raw(xlsx_key, bbuf.getvalue())
+            except Exception as e:
+                print(f"[analysis] Skipping XLSX export to storage: {e}")
         return location
 
 
