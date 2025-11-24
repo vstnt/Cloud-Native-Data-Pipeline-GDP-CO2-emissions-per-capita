@@ -1,6 +1,12 @@
 # Cloud-Native-Data-Pipeline-GDP-CO2-emissions-per-capita
 Cloud-Native Data Pipeline Using Python and Public Data Sources
 
+## Project Deliverables
+
+- Full documentation: `docs/final_documentation.md`
+- Cloud execution guide: `docs/cloud_execution_instructions.md`
+- Final presentation (PDF): `docs/final_presentation.pdf`
+
 ## Architecture Overview
 
 - Public data sources:
@@ -96,7 +102,7 @@ Example handler for AWS Lambda:
 
 - Handler: `cloud_pipeline.lambda_handler`
 
-For step‑by‑step cloud details, see `cloud/instructions.md`.
+For step‑by‑step cloud details, see `docs/cloud_execution_instructions.md`.
 
 ## Incremental Ingestion Strategy
 
