@@ -248,3 +248,64 @@ Notes:
 - Raw traceability and idempotence helpers
   - `raw_payload` (World Bank) and `raw_table_json` (Wikipedia) preserve the original payload used for hashing.
   - `record_hash` is SHA1 over the normalized raw payload to support change detection and potential deduplication.
+
+# Operational Considerations
+
+## Error Handling
+
+- World Bank ingestion
+  - HTTP errors: `requests.get(...).raise_for_status()` raises; the module wraps the run in `try/except` and records `FAILED` with `error_message` in metadata.
+  - Schema validation: raises `RuntimeError` for unexpected API structure; handled as a failed run.
+  - Empty increments: still writes a RAW JSONL (possibly empty) and completes with `SUCCESS`; checkpoint remains unchanged.
+
+- Wikipedia crawler
+  - HTTP errors: `raise_for_status()` triggers failure; run is marked `FAILED` with details.
+  - Table detection: falls back to the first `wikitable`; if none found or headers cannot be extracted, raises `RuntimeError` → run `FAILED`.
+
+- Transformations and curated
+  - World Bank and Wikipedia processing functions propagate exceptions; failures bubble to the orchestrator (Lambda) and fail the invocation.
+  - Curated builder wraps its own run in `try/except`; on failure marks `FAILED`; on success always records a snapshot checkpoint, even with zero rows.
+
+- Analytics
+  - Scatter plot: gracefully skipped when curated data is missing or lacks valid rows; correlation summary writes an empty CSV in that scenario.
+
+## Pagination Strategies
+
+- World Bank API
+  - Uses API metadata field `pages` to iterate page-by-page with `per_page=1000` until all records are yielded.
+
+- S3 listings (processed/curated reads)
+  - `S3StorageAdapter.list_keys` uses the AWS paginator for `list_objects_v2` to enumerate all objects under a prefix.
+
+## Retry Logic
+
+- Explicit custom retries are not implemented in ingestion or crawler modules.
+- Network robustness relies on underlying libraries (Requests, Boto3 default retry behavior for S3/DynamoDB calls).
+- Failures are surfaced and recorded in the metadata store; re-runs are safe due to idempotent writes/overwrites in PROCESSED and snapshotting in CURATED.
+
+## Incremental Ingestion Approach
+
+- World Bank API (by year)
+  - Checkpoint key: `last_year_loaded_world_bank` (string).
+  - Baseline: `min_year_exclusive = checkpoint`; if a `min_year` parameter is passed and is greater than checkpoint, baseline becomes `min_year - 1`.
+  - Filter: keep only records with `year > min_year_exclusive` and `year <= max_year` (if provided).
+  - Update: after a successful run, checkpoint advances to the max ingested year.
+
+- Wikipedia crawler
+  - Snapshot-based (no incremental checkpoint). Each run writes a new RAW file with `record_hash` for traceability.
+
+- Curated layer
+  - Writes `snapshot_date=<YYYYMMDD>` partitions and records that as `last_checkpoint` in the curated run metadata.
+
+## Idempotency Considerations
+
+- Deterministic transforms
+  - PROCESSED keys are stable per year; reprocessing the same year overwrites the same Parquet object (idempotent outcome).
+  - Country mapping writes a fixed key (`processed/country_mapping/country_mapping.parquet`) and is overwritten deterministically.
+
+- Snapshotting for curated and analytics
+  - CURATED includes `snapshot_date`, generating a new immutable snapshot per run for time-travel and auditability.
+  - Analytics artefacts are written under `analytics/<YYYYMMDD>/` and may overwrite within the same day (idempotent per day).
+
+- Raw traceability
+  - RAW records include `record_hash` to detect content changes across runs. Deduplication is not enforced in code but the hash enables future idempotent compaction.
