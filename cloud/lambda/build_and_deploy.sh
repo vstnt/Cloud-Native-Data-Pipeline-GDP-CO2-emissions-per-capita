@@ -70,10 +70,30 @@ echo "Ensuring ECR repository: ${ECR_REPO}"
 echo "Logging in to ECR..."
 "${AWS}" ecr get-login-password --region "${REGION}" | docker login --username AWS --password-stdin "${ECR_URI}"
 
-echo "Building Docker image for Lambda using classic builder (schema2, gzip)"
-DOCKER_BUILDKIT=0 docker build -t "${IMAGE_NAME}" -f "${SCRIPT_DIR}/Dockerfile" "${REPO_ROOT}"
-docker tag "${IMAGE_NAME}" "${FULL_IMAGE_URI}"
-docker push "${FULL_IMAGE_URI}"
+echo "Building Docker image for Lambda (prefer buildx, docker media types)"
+if docker buildx version >/dev/null 2>&1; then
+  set +e
+  docker buildx build \
+    --platform linux/amd64 \
+    -t "${FULL_IMAGE_URI}" \
+    --output type=registry,oci-mediatypes=false \
+    --provenance=false \
+    --sbom=false \
+    -f "${SCRIPT_DIR}/Dockerfile" "${REPO_ROOT}"
+  BUILD_STATUS=$?
+  set -e
+  if [ ${BUILD_STATUS} -ne 0 ]; then
+    echo "buildx failed or not compatible; falling back to classic builder (schema2, gzip)"
+    DOCKER_BUILDKIT=0 docker build -t "${IMAGE_NAME}" -f "${SCRIPT_DIR}/Dockerfile" "${REPO_ROOT}"
+    docker tag "${IMAGE_NAME}" "${FULL_IMAGE_URI}"
+    docker push "${FULL_IMAGE_URI}"
+  fi
+else
+  echo "buildx not available; using classic builder (schema2, gzip)"
+  DOCKER_BUILDKIT=0 docker build -t "${IMAGE_NAME}" -f "${SCRIPT_DIR}/Dockerfile" "${REPO_ROOT}"
+  docker tag "${IMAGE_NAME}" "${FULL_IMAGE_URI}"
+  docker push "${FULL_IMAGE_URI}"
+fi
 
 # Convert template path to Windows path if using aws.exe from Windows
 TEMPLATE_FILE="${SCRIPT_DIR}/template.yaml"

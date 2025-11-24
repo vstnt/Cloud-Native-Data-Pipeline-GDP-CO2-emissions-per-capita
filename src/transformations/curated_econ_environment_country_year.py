@@ -37,8 +37,8 @@ from typing import List, Optional, Union
 
 import pandas as pd
 
-from adapters import StorageAdapter
-from metadata import CURATED_JOIN_SCOPE, end_run, start_run
+from adapters import StorageAdapter, MetadataAdapter, LocalMetadataAdapter
+from metadata import CURATED_JOIN_SCOPE
 from .world_bank_gdp_processed import (
     PROCESSED_BASE_PREFIX as WORLD_BANK_PROCESSED_BASE_PREFIX,
     PROCESSED_OUTPUT_DIR as WORLD_BANK_PROCESSED_OUTPUT_DIR,
@@ -393,11 +393,13 @@ def build_and_save_curated_econ_environment_country_year(
     output_dir: Path | str = CURATED_OUTPUT_DIR,
     run_scope: str = CURATED_JOIN_SCOPE,
     storage: Optional[StorageAdapter] = None,
+    metadata: Optional[MetadataAdapter] = None,
 ) -> List[Union[Path, str]]:
     """
     Orquestra o build + save da camada CURATED, registrando metadados de run.
     """
-    run_id = start_run(run_scope)
+    meta = metadata or LocalMetadataAdapter()
+    run_id = meta.start_run(run_scope)
     snapshot_ts = datetime.now(timezone.utc)
     snapshot_date = snapshot_ts.strftime("%Y%m%d")
 
@@ -417,7 +419,7 @@ def build_and_save_curated_econ_environment_country_year(
             storage=storage,
         )
 
-        end_run(
+        meta.end_run(
             run_id,
             status="SUCCESS",
             rows_processed=int(df.shape[0]),
@@ -425,7 +427,7 @@ def build_and_save_curated_econ_environment_country_year(
         )
         return paths
     except Exception as exc:  # noqa: BLE001
-        end_run(
+        meta.end_run(
             run_id,
             status="FAILED",
             error_message=str(exc),
@@ -483,4 +485,3 @@ __all__ = [
     "save_curated_econ_environment_country_year_parquet_partitions",
     "build_and_save_curated_econ_environment_country_year",
 ]
-

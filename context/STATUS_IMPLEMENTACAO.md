@@ -19,10 +19,10 @@ Checklist alinhado aos "Grandes Passos da Implementação" (`context/Passos da i
 - [x] (10) Criar bucket S3 e projetar a estrutura de prefixos
 - [x] (11) Criar tabela DynamoDB real
 - [x] (12) Ajustar caminho dos arquivos para S3
-- [ ] (13) Criar função AWS Lambda
-- [ ] (14) Criar IAM Role do Lambda
-- [ ] (15) Criar regra EventBridge (agendamento diário)
-- [ ] (16) Testar execução na AWS
+- [x] (13) Criar função AWS Lambda
+- [x] (14) Criar IAM Role do Lambda
+- [x] (15) Criar regra EventBridge (agendamento diário)
+- [x] (16) Testar execução na AWS
 - [ ] (17) Preencher os documentos finais
 
 Notas da Parte 2 (atualização):
@@ -31,5 +31,5 @@ Notas da Parte 2 (atualização):
   - `Dockerfile` (Lambda container image com dependências).
   - `template.yaml` (CloudFormation: Lambda + Role + EventBridge Rule).
   - `build_and_deploy.sh` (script para build→push ECR→deploy do stack).
-- Itens (13), (14) e (15) ficam prontos para deploy; dependem apenas de executar o script no WSL com AWS CLI + Docker.
+- Itens (13), (14) e (15) concluídos via `build_and_deploy.sh` (stack `gdp-co2-pipeline` criado/atualizado com sucesso).
 - Analytical Output agora também persiste em S3 (prefixo `analytics/<YYYYMMDD>/`) quando rodando via Lambda (StorageAdapter). Em execução local, continua a escrever em `analysis/`.

@@ -188,6 +188,7 @@ def run_cloud_pipeline(
         wikipedia_processed_dir=WIKIPEDIA_CO2_PROCESSED_OUTPUT_DIR,
         output_dir=CURATED_ECON_ENV_OUTPUT_DIR,
         storage=storage,
+        metadata=metadata,
     )
     artefacts["curated"] = [str(k) for k in curated_keys]
 
