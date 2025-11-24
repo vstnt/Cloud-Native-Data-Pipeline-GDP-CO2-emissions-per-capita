@@ -293,6 +293,9 @@ Notes:
 
 - Wikipedia crawler
   - Snapshot-based (no incremental checkpoint). Each run writes a new RAW file with `record_hash` for traceability.
+  - Rationale: the page does not provide stable row keys and editors may change historical values; MediaWiki diffs are textual and do not reliably map cell-level changes within tables. Attempting a "only new/changed rows" incremental is fragile and risks missing corrections.
+  - Resulting choice: reprocess the entire table on change to keep the pipeline simple, idempotent, and auditable.
+  - Safe optimization (future): store and compare the page `revid`; if unchanged, skip the crawl; if changed, download and parse the full page. Optionally persist `pageid`, `revid`, and `rev_timestamp` in RAW metadata for audit.
 
 - Curated layer
   - Writes `snapshot_date=<YYYYMMDD>` partitions and records that as `last_checkpoint` in the curated run metadata.

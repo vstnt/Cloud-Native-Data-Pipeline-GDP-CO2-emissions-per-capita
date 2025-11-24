@@ -204,7 +204,11 @@ For step‑by‑step cloud details, see `cloud/instructions.md`.
   - The CloudFormation template can use existing S3/DynamoDB resources or optionally create them (controlled by parameters `CreateS3Bucket` and `CreateDynamoTable`). When creation is enabled, resources are retained on stack deletion.
   - Lambda max timeout (900s) bounds runtime; memory defaults to 2048 MB and may need tuning for larger runs.
 - Incremental behavior
-  - Incremental ingestion applies to World Bank by year using a single checkpoint. Wikipedia is snapshot‑based without incremental diffs.
+  - Incremental ingestion applies to World Bank by year using a single checkpoint.
+  - Wikipedia is snapshot‑based (no incremental diffs).
+    - Why: the page does not expose stable row keys and edits can change historical values; MediaWiki diffs are textual and do not reliably map cell‑level changes in tables. A "only new/changed rows" approach is fragile and risks missing corrections.
+    - Consequence: reprocessing the entire table per revision keeps the pipeline simple, idempotent, and auditable.
+    - Possible optimization (future): check the page `revid` and skip when unchanged; if changed, download and parse the full page.
 - Data quality and mapping
   - Country mapping uses normalization rules and optional overrides (`src/transformations/country_mapping_overrides.csv`); some names may require curation.
   - Joining on `(country_code, year)` drops rows without matching CO₂ or GDP.
