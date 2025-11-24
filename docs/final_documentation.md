@@ -281,9 +281,14 @@ Notes:
 
 ## Retry Logic
 
-- Explicit custom retries are not implemented in ingestion or crawler modules.
-- Network robustness relies on underlying libraries (Requests, Boto3 default retry behavior for S3/DynamoDB calls).
-- Failures are surfaced and recorded in the metadata store; re-runs are safe due to idempotent writes/overwrites in PROCESSED and snapshotting in CURATED.
+- Lightweight custom retries added for external HTTP calls used by ingestion/crawler.
+- Helper: `src/common/retry.py:http_get_with_retries` with exponential backoff + jitter.
+- Defaults: up to 4 attempts; base backoff 0.5s (capped at 8s); retries on 429/5xx and transient network errors; honors `Retry-After`.
+- Applied in:
+  - World Bank: `_fetch_indicator_page` inside `src/ingestion_api/world_bank_ingestion.py`.
+  - Wikipedia: `fetch_wikipedia_co2_html` and `fetch_wikipedia_latest_revision` in `src/crawler/wikipedia_co2_crawler.py`.
+- S3/DynamoDB calls continue to rely on boto3/SDK retry behavior.
+- Failures after retries are recorded in the metadata store; re-runs are safe due to idempotent design.
 
 ## Incremental Ingestion Approach
 

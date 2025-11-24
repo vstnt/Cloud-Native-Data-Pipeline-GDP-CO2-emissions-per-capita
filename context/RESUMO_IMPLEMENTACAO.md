@@ -13,6 +13,7 @@ Documento de apoio para manter o contexto do que já foi implementado até o mom
   - `src/crawler` – crawler da Wikipedia para CO₂ per capita (camada RAW).
   - `src/transformations` – transformações para camadas PROCESSED e CURATED (World Bank, Wikipedia e mapping de países).
   - `src/analysis` – geração de artefatos analíticos (Analytical Output).
+  - `src/common` – utilidades compartilhadas (ex.: helper de retries HTTP).
   - `src/local_pipeline.py` – orquestração local end-to-end da pipeline.
   - `raw/` – arquivos de entrada em formato RAW (JSONL).
   - `processed/` – saídas processadas em formato Parquet, com particionamento por ano ou tipo de dado.
@@ -81,12 +82,13 @@ Essa estrutura está alinhada ao desenho proposto no plano (camadas RAW → PROC
 - Responsabilidades implementadas:
   - Chamada à API do World Bank para o indicador `NY.GDP.PCAP.CD` (GDP per capita, current US$).
   - Paginação completa da API (`fetch_all_indicator_records`).
+  - Robustez de rede: chamadas HTTP da API usam `src/common/retry.py:http_get_with_retries` (retries leves com backoff exponencial + jitter para 429/5xx e erros transitórios) antes de `raise_for_status()`.
   - Cálculo de `record_hash` (SHA1 do payload normalizado).
   - Lógica incremental por ano, usando checkpoint:
     - Chave de checkpoint: `last_year_loaded_world_bank` (`WORLD_BANK_CHECKPOINT_KEY`).
     - Checkpoint armazenado via `MetadataAdapter.save_checkpoint` / `load_checkpoint`.
   - Enriquecimento dos registros RAW com:
-    - `ingestion_run_id`, `igestion_ts`, `data_source`, `raw_payload`, `record_hash`, `raw_file_path`.
+    - `ingestion_run_id`, `ingestion_ts`, `data_source`, `raw_payload`, `record_hash`, `raw_file_path`.
   - Persistência dos dados RAW em JSONL usando `StorageAdapter`:
     - Prefixo lógico: `RAW_BASE_PREFIX = "raw/world_bank_gdp"`.
     - Chave: `raw/world_bank_gdp/world_bank_gdp_raw_<timestamp>.jsonl`.
@@ -121,21 +123,23 @@ Essa estrutura está alinhada ao desenho proposto no plano (camadas RAW → PROC
 
 - Localização: `src/crawler/wikipedia_co2_crawler.py`.
 - Responsabilidades implementadas:
-  - Download da página oficial de emissões per capita da Wikipedia:
+  - Guarda de revisão: consulta a MediaWiki API para obter `pageid`, `revid` e `rev_timestamp` mais recentes e compara com o checkpoint `last_revid_wikipedia_co2`. Se o `revid` não mudou, a execução é marcada como `SKIPPED` e não baixa a página.
+  - Download da página oficial de emissões per capita da Wikipedia (quando há mudança):
     - `https://en.wikipedia.org/wiki/List_of_countries_by_carbon_dioxide_emissions_per_capita`
   - Identificação da tabela principal de emissões per capita.
   - Limpeza de células (remover footnotes, normalizar espaços).
   - Conversão do HTML da tabela em uma lista de linhas “sujas” (`raw_table_json`).
   - Construção de um registro RAW alinhado ao schema definido no plano:
     - `ingestion_run_id`, `ingestion_ts`, `data_source = "wikipedia_co2"`,
-      `page_url`, `table_html`, `raw_table_json`, `record_hash`, `raw_file_path`.
+      `page_url`, `pageid`, `revid`, `rev_timestamp`, `table_html`, `raw_table_json`, `record_hash`, `raw_file_path`.
   - Persistência do RAW em JSONL via `StorageAdapter`:
     - Prefixo lógico: `RAW_BASE_PREFIX = "raw/wikipedia_co2"`.
     - Arquivo: `wikipedia_co2_raw_<timestamp>.jsonl`.
   - Uso de `MetadataAdapter` para registrar runs (`start_run` / `end_run` com `rows_processed`).
+  - Robustez de rede: as chamadas HTTP (MediaWiki API e download da página) usam `src/common/retry.py:http_get_with_retries` com backoff exponencial + jitter (retries em 429/5xx e falhas transitórias), além de `User-Agent` explícito.
 - Assinatura atual:
-  - `crawl_wikipedia_co2_raw(storage: StorageAdapter, metadata: MetadataAdapter, url=..., timeout=30, run_scope=...) -> str`
-  - Retorna a chave lógica do arquivo RAW (no ambiente local, coincide com o path em `raw/`).
+  - `crawl_wikipedia_co2_raw(storage: StorageAdapter, metadata: MetadataAdapter, url=..., timeout=30, run_scope=...) -> dict`
+  - Retorno (exemplo): `{ changed: bool, raw_key: Optional[str], pageid: Optional[int], revid: Optional[int], rev_timestamp: Optional[str] }`.
 - Há arquivos RAW em `raw/wikipedia_co2/`, resultado de execuções locais do crawler.
 
 ## 6. Processamento Wikipedia CO₂ → camada PROCESSED
@@ -370,3 +374,12 @@ Entrega concluída para deploy e execução em Lambda (com persistência de anal
   - Lambda: `gdp-co2-pipeline-gdp-co2-lambda` (Outputs confirmados).
   - Invocação manual retornou `StatusCode: 200` (sucesso); logs mostram as 7 etapas da pipeline executadas em cloud.
   - Artefatos analíticos disponíveis em `s3://<bucket>/<base_prefix>/analytics/<YYYYMMDD>/`.
+
+### 13.1 Melhorias de robustez (retries HTTP)
+
+- Implementado helper de retries HTTP em `src/common/retry.py` (`http_get_with_retries`):
+  - Até 4 tentativas, backoff exponencial com jitter (base 0,5s, teto 8s), respeita `Retry-After` quando presente.
+  - Re-tenta em `429/5xx` e erros transitórios de rede (timeout/conexão).
+- Aplicado em:
+  - World Bank ingestion (`_fetch_indicator_page` em `src/ingestion_api/world_bank_ingestion.py`).
+  - Wikipedia crawler (`fetch_wikipedia_co2_html` e `fetch_wikipedia_latest_revision` em `src/crawler/wikipedia_co2_crawler.py`).

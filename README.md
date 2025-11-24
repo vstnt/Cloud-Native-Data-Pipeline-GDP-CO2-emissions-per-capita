@@ -216,4 +216,4 @@ For step‑by‑step cloud details, see `cloud/instructions.md`.
   - Joining on `(country_code, year)` drops rows without matching CO₂ or GDP.
 - Observability and ops
   - Logging via CloudWatch; no metrics dashboards/alerts included.
-  - Basic error handling records FAILED runs; no retry/compensation logic in code.
+  - Lightweight HTTP retries for external sources (World Bank, Wikipedia) with exponential backoff + jitter; SDK retries apply for S3/DynamoDB.

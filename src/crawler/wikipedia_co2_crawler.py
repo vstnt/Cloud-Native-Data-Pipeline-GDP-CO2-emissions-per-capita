@@ -36,6 +36,7 @@ from bs4 import BeautifulSoup
 from adapters import MetadataAdapter, StorageAdapter
 from env_loader import load_dotenv_if_present
 from metadata import WIKIPEDIA_CO2_SCOPE
+from common.retry import http_get_with_retries
 
 # Carrega .env se existir (para WIKIPEDIA_URL, entre outros).
 load_dotenv_if_present()
@@ -69,7 +70,7 @@ def fetch_wikipedia_co2_html(
     headers = {
         "User-Agent": "env-econ-pipeline/1.0 (+https://www.example.com/)",
     }
-    response = requests.get(url, headers=headers, timeout=timeout)
+    response = http_get_with_retries(url, headers=headers, timeout=timeout)
     response.raise_for_status()
     return response.text
 
@@ -106,8 +107,6 @@ def fetch_wikipedia_latest_revision(
     -------
     (pageid, revid, rev_timestamp) or (None, None, None) if unavailable.
     """
-    import requests
-
     title = _extract_wikipedia_title(url)
     api = "https://en.wikipedia.org/w/api.php"
     params = {
@@ -120,7 +119,7 @@ def fetch_wikipedia_latest_revision(
         "redirects": "1",
     }
     headers = {"User-Agent": "env-econ-pipeline/1.0 (+https://www.example.com/)"}
-    resp = requests.get(api, params=params, headers=headers, timeout=timeout)
+    resp = http_get_with_retries(api, params=params, headers=headers, timeout=timeout)
     resp.raise_for_status()
     data = resp.json()
 

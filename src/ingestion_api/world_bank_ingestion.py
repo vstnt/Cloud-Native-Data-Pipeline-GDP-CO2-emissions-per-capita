@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import requests
+from common.retry import http_get_with_retries
 
 from adapters import MetadataAdapter, StorageAdapter
 from env_loader import load_dotenv_if_present
@@ -55,7 +56,7 @@ def _fetch_indicator_page(
         "page": page,
         "per_page": per_page,
     }
-    response = requests.get(url, params=params, timeout=timeout)
+    response = http_get_with_retries(url, params=params, timeout=timeout)
     response.raise_for_status()
     data = response.json()
 
