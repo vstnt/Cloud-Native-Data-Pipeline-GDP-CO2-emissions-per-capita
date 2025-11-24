@@ -170,3 +170,81 @@ Notes:
   - Provisions Lambda, IAM Role (S3/DynamoDB access), and the EventBridge Rule; sets environment variables and memory/timeout.
 - Amazon CloudWatch Logs
   - Collects Lambda logs for observability and troubleshooting.
+
+# Data Models / Schemas
+
+## Raw Structure
+
+- World Bank API RAW (JSONL; one line per API record)
+  - Path: `raw/world_bank_gdp/world_bank_gdp_raw_<timestamp>.jsonl`.
+  - Content per line combines the original World Bank record plus audit fields:
+    - Original fields (subset): `indicator={id,value}`, `country={id?,value}`, `countryiso3code`, `date`, `value`, etc.
+    - Audit fields: `ingestion_run_id` (UUID), `ingestion_ts` (UTC ISO 8601), `data_source="world_bank_api"`.
+    - Traceability: `raw_payload` (normalized JSON string of the original record), `record_hash` (SHA1 over the original payload), `raw_file_path` (logical key).
+  - Produced by: `src/ingestion_api/world_bank_ingestion.py:ingest_world_bank_gdp_raw`.
+
+- Wikipedia CO2 RAW (JSONL; single line snapshot per run)
+  - Path: `raw/wikipedia_co2/wikipedia_co2_raw_<timestamp>.jsonl`.
+  - Content fields:
+    - `ingestion_run_id`, `ingestion_ts` (UTC ISO), `data_source="wikipedia_co2"`.
+    - `page_url` (source URL), `table_html` (HTML of the chosen wikitable).
+    - `raw_table_json`: `{headers: [..], rows: [{<header>: <cell_text>, ...}, ...]}`.
+    - `record_hash` (SHA1 over `raw_table_json`), `raw_file_path` (logical key).
+  - Produced by: `src/crawler/wikipedia_co2_crawler.py:crawl_wikipedia_co2_raw`.
+
+## Processed Structure
+
+- World Bank GDP per capita (Parquet, partitioned by `year`)
+  - Path pattern: `processed/world_bank_gdp/year=<year>/processed_worldbank_gdp_per_capita.parquet`.
+  - Columns and types:
+    - `country_code` string, `country_name` string, `year` int64, `gdp_per_capita_usd` float64,
+      `indicator_id` string, `indicator_name` string,
+      `ingestion_run_id` string, `ingestion_ts` timestamp (UTC), `data_source` string.
+  - Built by: `src/transformations/world_bank_gdp_processed.py:process_world_bank_gdp_raw_file`.
+
+- Wikipedia CO2 per capita (Parquet, partitioned by `year`)
+  - Path pattern: `processed/wikipedia_co2/year=<year>/processed_wikipedia_co2_per_capita.parquet`.
+  - Columns and types:
+    - `country_name` string, `country_name_normalized` string, `country_code` string (filled via mapping),
+      `year` Int64 (2000 or 2023), `co2_tons_per_capita` float64,
+      `notes` string, `ingestion_run_id` string, `ingestion_ts` timestamp (UTC), `data_source` string.
+  - Built by: `src/transformations/wikipedia_co2_processed.py:process_wikipedia_co2_raw_file`.
+
+- Country mapping (single Parquet)
+  - Path: `processed/country_mapping/country_mapping.parquet`.
+  - Columns and types:
+    - `country_name_normalized` string (primary key for mapping), `country_code` string, `country_name` string,
+      `source_precedence` string ("world_bank" or "override").
+  - Built by: `src/transformations/country_mapping.py:build_country_mapping_from_world_bank_parquet` with `_apply_overrides`.
+
+## Curated Final Dataset
+
+- Econ + Environment by country-year (Parquet, partitioned by `year` and `snapshot_date`)
+  - Path pattern: `curated/env_econ_country_year/year=<year>/snapshot_date=<YYYYMMDD>/curated_econ_environment_country_year.parquet`.
+  - Join key: `(country_code, year)` between World Bank and Wikipedia processed datasets.
+  - Columns and types:
+    - `country_code` string, `country_name` string, `year` Int64,
+      `gdp_per_capita_usd` float64, `co2_tons_per_capita` float64,
+      `co2_per_1000usd_gdp` float64 (derived when GDP > 0),
+      `gdp_source_system` string, `co2_source_system` string,
+      `first_ingestion_run_id` string, `last_update_run_id` string, `last_update_ts` timestamp (UTC).
+  - Built by: `src/transformations/curated_econ_environment_country_year.py:build_and_save_curated_econ_environment_country_year`.
+
+## Naming Conventions and Normalization
+
+- Paths and partitions
+  - Layered prefixes: `raw/`, `processed/`, `curated/`, `analytics/`.
+  - Partition naming: `year=<year>` for processed/curated; `snapshot_date=<YYYYMMDD>` for curated; analytics grouped by `<YYYYMMDD>`.
+  - File names reflect semantic content: `processed_worldbank_gdp_per_capita.parquet`, `processed_wikipedia_co2_per_capita.parquet`, `curated_econ_environment_country_year.parquet`, `country_mapping.parquet`.
+
+- Field naming
+  - Snake_case for columns; explicit units/scope where helpful (e.g., `gdp_per_capita_usd`, `co2_tons_per_capita`).
+  - Source provenance captured as `data_source` in processed layers and as `*_source_system` in curated.
+
+- Country name normalization
+  - Function: `normalize_country_name` lowercases, removes accents (Unicode NFKD), strips non‑alphanumeric (keeps spaces), collapses whitespace, and trims.
+  - Mapping precedence: manual overrides take priority over base mapping; `source_precedence` indicates the origin.
+
+- Raw traceability and idempotence helpers
+  - `raw_payload` (World Bank) and `raw_table_json` (Wikipedia) preserve the original payload used for hashing.
+  - `record_hash` is SHA1 over the normalized raw payload to support change detection and potential deduplication.
