@@ -29,8 +29,9 @@ PIPELINE_METADATA_TABLE=${PIPELINE_METADATA_TABLE:?Set PIPELINE_METADATA_TABLE i
 SCHEDULE_EXPRESSION=${SCHEDULE_EXPRESSION:-"cron(0 2 * * ? *)"}
 MEMORY_SIZE=${MEMORY_SIZE:-2048}
 TIMEOUT=${TIMEOUT:-900}
-CREATE_S3_BUCKET=${CREATE_S3_BUCKET:-false}
-CREATE_DYNAMO_TABLE=${CREATE_DYNAMO_TABLE:-false}
+# Optional flags: when unset, template defaults apply
+# CREATE_S3_BUCKET (true/false)
+# CREATE_DYNAMO_TABLE (true/false)
 
 echo "Using AWS region: ${REGION}"
 
@@ -109,21 +110,31 @@ case "${AWS}" in
 esac
 
 echo "Deploying CloudFormation stack: ${STACK_NAME}"
+
+# Build parameter overrides, appending optional flags only if set
+PARAM_OVERRIDES=(
+  StackNameSuffix="${STACK_SUFFIX}"
+  ImageUri="${FULL_IMAGE_URI}"
+  PipelineBucketName="${PIPELINE_S3_BUCKET}"
+  PipelineBasePrefix="${PIPELINE_S3_BASE_PREFIX}"
+  MetadataTableName="${PIPELINE_METADATA_TABLE}"
+  ScheduleExpression="${SCHEDULE_EXPRESSION}"
+  MemorySize="${MEMORY_SIZE}"
+  Timeout="${TIMEOUT}"
+)
+
+if [ -n "${CREATE_S3_BUCKET:-}" ]; then
+  PARAM_OVERRIDES+=(CreateS3Bucket="${CREATE_S3_BUCKET}")
+fi
+if [ -n "${CREATE_DYNAMO_TABLE:-}" ]; then
+  PARAM_OVERRIDES+=(CreateDynamoTable="${CREATE_DYNAMO_TABLE}")
+fi
+
 "${AWS}" cloudformation deploy \
   --stack-name "${STACK_NAME}" \
   --template-file "${TEMPLATE_ARG}" \
   --capabilities CAPABILITY_NAMED_IAM \
-  --parameter-overrides \
-      StackNameSuffix="${STACK_SUFFIX}" \
-      ImageUri="${FULL_IMAGE_URI}" \
-      PipelineBucketName="${PIPELINE_S3_BUCKET}" \
-      PipelineBasePrefix="${PIPELINE_S3_BASE_PREFIX}" \
-      MetadataTableName="${PIPELINE_METADATA_TABLE}" \
-      CreateS3Bucket="${CREATE_S3_BUCKET}" \
-      CreateDynamoTable="${CREATE_DYNAMO_TABLE}" \
-      ScheduleExpression="${SCHEDULE_EXPRESSION}" \
-      MemorySize="${MEMORY_SIZE}" \
-      Timeout="${TIMEOUT}" \
+  --parameter-overrides "${PARAM_OVERRIDES[@]}" \
   --region "${REGION}"
 
 echo "Deployment completed. Stack outputs:"

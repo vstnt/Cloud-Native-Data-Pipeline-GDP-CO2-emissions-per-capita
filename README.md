@@ -148,12 +148,13 @@ For step‑by‑step cloud details, see `cloud/instructions.md`.
     - Otherwise, fetch it from the stack outputs:
       `aws cloudformation describe-stacks --stack-name ${STACK_NAME:-gdp-co2-pipeline} --query 'Stacks[0].Outputs[?OutputKey==\`LambdaFunctionName\`].OutputValue' --output text --region ${AWS_REGION}`
   - Invoke manually (examples)
-    - Default (no payload):
-      `aws lambda invoke --function-name gdp-co2-pipeline-gdp-co2-lambda --payload '{}' out.json --region ${AWS_REGION}`
-    - With bounds:
-      `aws lambda invoke --function-name gdp-co2-pipeline-gdp-co2-lambda --payload '{"min_year":2000, "max_year":2023}' out.json --region ${AWS_REGION}`
+    - Default (no payload) — AWS CLI v2:
+      `aws lambda invoke --function-name gdp-co2-pipeline-gdp-co2-lambda --cli-binary-format raw-in-base64-out --payload '{}' out.json --region ${AWS_REGION}`
+    - With bounds — AWS CLI v2:
+      `aws lambda invoke --function-name gdp-co2-pipeline-gdp-co2-lambda --cli-binary-format raw-in-base64-out --payload '{"min_year":2000,"max_year":2023}' out.json --region ${AWS_REGION}`
     - Using sample event file:
       `aws lambda invoke --function-name gdp-co2-pipeline-gdp-co2-lambda --payload fileb://cloud/lambda/sample_event.json out.json --region ${AWS_REGION}`
+    - Note: AWS CLI v2 requires `--cli-binary-format raw-in-base64-out` when passing inline JSON via `--payload`. When using `fileb://...`, the flag is not required.
   - Outputs in S3: `raw/`, `processed/`, `curated/`, `analytics/<YYYYMMDD>/` under the configured base prefix.
   - Scheduled runs via EventBridge (default daily 02:00 UTC).
 

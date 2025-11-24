@@ -140,7 +140,7 @@ Steps:
      - EventBridge schedule rule (daily at 02:00 UTC by default).
       - Optional creation of S3 bucket and/or DynamoDB table when enabled; both are retained on stack deletion.
 
-Deployment parameters (optional via env):
+Deployment parameters (optional via env; if unset, template defaults apply):
 
 - `STACK_NAME` (default `gdp-co2-pipeline`)
 - `STACK_SUFFIX` (default `gdp-co2`)
@@ -168,14 +168,16 @@ After deployment, you can invoke manually:
 - Get the function name (if you missed it in outputs):
   `aws cloudformation describe-stacks --stack-name gdp-co2-pipeline --query 'Stacks[0].Outputs[?OutputKey==\`LambdaFunctionName\`].OutputValue' --output text`
 
-- Invoke without payload (uses default years):
-  `aws lambda invoke --function-name <function-name> --payload '{}' out.json`
+- Invoke without payload (AWS CLI v2):
+  `aws lambda invoke --function-name <function-name> --cli-binary-format raw-in-base64-out --payload '{}' out.json`
 
-- Invoke with a restricted year range:
-  `aws lambda invoke --function-name <function-name> --payload '{"min_year": 2000, "max_year": 2023}' out.json`
+- Invoke with a restricted year range (AWS CLI v2):
+  `aws lambda invoke --function-name <function-name> --cli-binary-format raw-in-base64-out --payload '{"min_year":2000,"max_year":2023}' out.json`
 
 - Invoke with sample file payload:
   `aws lambda invoke --function-name <function-name> --payload fileb://cloud/lambda/sample_event.json out.json`
+
+Note: In AWS CLI v2, inline JSON payloads require `--cli-binary-format raw-in-base64-out`. This flag is not needed when using `fileb://...`.
 
 The `out.json` file will contain the `statusCode` and an artefact summary.
 
