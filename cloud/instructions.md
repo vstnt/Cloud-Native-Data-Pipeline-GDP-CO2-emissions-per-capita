@@ -30,12 +30,91 @@ When creating the AWS Lambda function that runs the cloud pipeline:
   - `s3:GetObject`, `s3:PutObject`, `s3:ListBucket` on the configured bucket/prefix.
   - `dynamodb:PutItem`, `dynamodb:GetItem`, `dynamodb:UpdateItem`, `dynamodb:Scan` on the metadata table.
 
+Notes:
+- If you deploy using `cloud/lambda/build_and_deploy.sh` (CloudFormation), the handler and environment variables are set by the stack. No manual config needed in the console.
+- The template expects an existing S3 bucket and an existing DynamoDB table; it does not create them. DynamoDB table schema must be: partition key `pk` (String) and sort key `sk` (String).
+
+### Inline IAM policy example
+Use this as a reference inline policy for the Lambda execution role. Replace placeholders (`YOUR_BUCKET_NAME`, `YOUR_BASE_PREFIX`, `YOUR_REGION`, `YOUR_ACCOUNT_ID`, `YOUR_TABLE_NAME`). If you do not use a base prefix, change the S3 object ARN to `arn:aws:s3:::YOUR_BUCKET_NAME/*` and drop the `s3:prefix` condition.
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowCloudWatchLogs",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "AllowS3DataLakeAccess",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject"
+      ],
+      "Resource": [
+        "arn:aws:s3:::YOUR_BUCKET_NAME/YOUR_BASE_PREFIX/*"
+      ]
+    },
+    {
+      "Sid": "AllowS3ListOnBucket",
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::YOUR_BUCKET_NAME"
+      ],
+      "Condition": {
+        "StringLike": {
+          "s3:prefix": [
+            "YOUR_BASE_PREFIX/*"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "AllowDynamoDBMetadataTable",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:PutItem",
+        "dynamodb:GetItem",
+        "dynamodb:UpdateItem",
+        "dynamodb:Scan"
+      ],
+      "Resource": "arn:aws:dynamodb:YOUR_REGION:YOUR_ACCOUNT_ID:table/YOUR_TABLE_NAME"
+    }
+  ]
+}
+```
+
+### Storage paths (S3)
+- RAW
+  - `raw/world_bank_gdp/world_bank_gdp_raw_<timestamp>.jsonl`
+  - `raw/wikipedia_co2/wikipedia_co2_raw_<timestamp>.jsonl`
+- PROCESSED
+  - `processed/world_bank_gdp/year=<year>/processed_worldbank_gdp_per_capita.parquet`
+  - `processed/wikipedia_co2/year=<year>/processed_wikipedia_co2_per_capita.parquet`
+  - `processed/country_mapping/country_mapping.parquet`
+- CURATED
+  - `curated/env_econ_country_year/year=<year>/snapshot_date=<YYYYMMDD>/curated_econ_environment_country_year.parquet`
+- ANALYTICS (when running in cloud)
+  - `analytics/<YYYYMMDD>/gdp_vs_co2_scatter.png`
+  - `analytics/<YYYYMMDD>/correlation_summary.csv`
+
 ## 3. Lambda deployment (container image)
 
 Prerequisites (on WSL or Linux):
 
 - Docker installed and running
 - AWS CLI v2 configured (`aws configure`) with the correct account/region
+- Pre-created S3 bucket (`PIPELINE_S3_BUCKET`) and DynamoDB table (`PIPELINE_METADATA_TABLE`) with keys `pk` (partition) and `sk` (sort), both String.
 
 Steps:
 
@@ -71,6 +150,10 @@ Deployment parameters (optional via env):
 
 Output: the command prints the stack outputs, including the function name.
 
+Compute details:
+- Runtime: AWS Lambda container image (Python 3.11 base).
+- Defaults: `MEMORY_SIZE=2048` MB, `TIMEOUT=900` s; adjust via env if needed.
+
 ## 4. Quick test (manual invoke)
 
 After deployment, you can invoke manually:
@@ -83,6 +166,9 @@ After deployment, you can invoke manually:
 
 - Invoke with a restricted year range:
   `aws lambda invoke --function-name <function-name> --payload '{"min_year": 2000, "max_year": 2023}' out.json`
+
+- Invoke with sample file payload:
+  `aws lambda invoke --function-name <function-name> --payload fileb://cloud/lambda/sample_event.json out.json`
 
 The `out.json` file will contain the `statusCode` and an artefact summary.
 
@@ -101,3 +187,10 @@ The Lambda event may optionally contain `min_year` and `max_year` to limit the W
 
 Notes:
 - From this version onward, analytical artefacts (PNG and CSV) are also saved in S3 via the `StorageAdapter` under `analytics/<YYYYMMDD>/...`. In local execution, they are still written to the `analysis/` folder.
+
+## 6. Optional environment variables
+
+These are optional and allow customizing external sources:
+
+- `WORLD_BANK_INDICATOR` – World Bank indicator to ingest (default `NY.GDP.PCAP.CD`).
+- `WIKIPEDIA_URL` – Source URL for the CO₂ per capita table (default as in code).
