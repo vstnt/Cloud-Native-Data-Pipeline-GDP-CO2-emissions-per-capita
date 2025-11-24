@@ -105,22 +105,31 @@ def run_local_pipeline(
     print(f"      Mapping parquet: {mapping_path}")
 
     # 4. Wikipedia crawler (RAW)
-    print("[4/7] Crawling Wikipedia CO2 per capita (RAW)...")
-    raw_wikipedia_key = crawl_wikipedia_co2_raw(storage, metadata)
-    raw_wikipedia_path = Path(raw_wikipedia_key)
-    artefacts["wikipedia_raw"] = [raw_wikipedia_path]
-    print(f"      RAW file: {raw_wikipedia_path}")
+    print("[4/7] Crawling Wikipedia CO2 per capita (RAW) with revision guard...")
+    wiki_result = crawl_wikipedia_co2_raw(storage, metadata)
+    if wiki_result.get("changed"):
+        raw_wikipedia_key = wiki_result["raw_key"]
+        raw_wikipedia_path = Path(raw_wikipedia_key)
+        artefacts["wikipedia_raw"] = [raw_wikipedia_path]
+        print(f"      RAW file: {raw_wikipedia_path} (revid={wiki_result.get('revid')})")
+    else:
+        print(
+            f"      No change detected on Wikipedia page (revid={wiki_result.get('revid')}). Skipping RAW rewrite.",
+        )
 
     # 5. Wikipedia processing (PROCESSED, with country mapping)
     print("[5/7] Processing Wikipedia RAW -> PROCESSED parquet with country mapping...")
-    mapping_df = load_country_mapping(path=COUNTRY_MAPPING_PARQUET_PATH)
-    wiki_processed_paths = process_wikipedia_co2_raw_file(
-        raw_file_path=raw_wikipedia_path,
-        output_dir=WIKIPEDIA_CO2_PROCESSED_OUTPUT_DIR,
-        country_mapping=mapping_df,
-    )
-    artefacts["wikipedia_processed"] = [Path(p) for p in wiki_processed_paths]
-    print(f"      Generated {len(wiki_processed_paths)} parquet files.")
+    if wiki_result.get("changed"):
+        mapping_df = load_country_mapping(path=COUNTRY_MAPPING_PARQUET_PATH)
+        wiki_processed_paths = process_wikipedia_co2_raw_file(
+            raw_file_path=raw_wikipedia_path,
+            output_dir=WIKIPEDIA_CO2_PROCESSED_OUTPUT_DIR,
+            country_mapping=mapping_df,
+        )
+        artefacts["wikipedia_processed"] = [Path(p) for p in wiki_processed_paths]
+        print(f"      Generated {len(wiki_processed_paths)} parquet files.")
+    else:
+        print("      Skipped: Wikipedia unchanged; keeping existing PROCESSED.")
 
     # 6. Curated join
     print("[6/7] Building curated econ_environment_country_year dataset...")

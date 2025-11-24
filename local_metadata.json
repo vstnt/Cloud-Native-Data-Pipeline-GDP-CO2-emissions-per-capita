@@ -19,9 +19,40 @@
       "rows_processed": 328,
       "last_checkpoint": "snapshot_date=20251123",
       "error_message": null
+    },
+    {
+      "ingestion_run_id": "e3f32a4c-023d-45d2-aa69-7bfccfa2b535",
+      "run_scope": "world_bank_api",
+      "start_ts": "2025-11-24T05:18:29.323444+00:00",
+      "end_ts": "2025-11-24T05:18:43.092250+00:00",
+      "status": "SUCCESS",
+      "rows_processed": 0,
+      "last_checkpoint": "2023",
+      "error_message": null
+    },
+    {
+      "ingestion_run_id": "b145d7eb-5f94-47ee-88d1-4c0ff323bb9e",
+      "run_scope": "wikipedia_co2",
+      "start_ts": "2025-11-24T05:18:43.475726+00:00",
+      "end_ts": "2025-11-24T05:18:45.146409+00:00",
+      "status": "SUCCESS",
+      "rows_processed": 210,
+      "last_checkpoint": "1303551618",
+      "error_message": null
+    },
+    {
+      "ingestion_run_id": "3a957eea-01f2-4893-813d-3be03206d6aa",
+      "run_scope": "curated_join",
+      "start_ts": "2025-11-24T05:18:45.183764+00:00",
+      "end_ts": "2025-11-24T05:18:45.372856+00:00",
+      "status": "SUCCESS",
+      "rows_processed": 328,
+      "last_checkpoint": "snapshot_date=20251124",
+      "error_message": null
     }
   ],
   "checkpoints": {
-    "last_year_loaded_world_bank": "2023"
+    "last_year_loaded_world_bank": "2023",
+    "last_revid_wikipedia_co2": "1303551618"
   }
 }

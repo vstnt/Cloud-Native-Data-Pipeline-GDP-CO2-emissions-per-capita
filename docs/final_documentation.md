@@ -77,10 +77,10 @@ Notes:
 
 - Wikipedia crawler (CO2 per capita)
   - Module: `crawler/wikipedia_co2_crawler.py` (function `crawl_wikipedia_co2_raw`).
-  - Fetch: downloads page HTML with a custom User‑Agent.
+  - Fetch: first queries MediaWiki API for the latest `revid` (with redirects). If unchanged vs checkpoint, the step is skipped; if changed, downloads page HTML with a custom User‑Agent.
   - Table detection: picks the main `wikitable` by caption/keywords ("emissions", "per capita", "CO2"); falls back to first `wikitable` if needed.
   - Parsing: extracts headers and rows; builds `raw_table_json={headers, rows}` and keeps `table_html` for traceability.
-  - RAW record: one JSONL line with `ingestion_run_id`, `ingestion_ts`, `data_source="wikipedia_co2"`, `page_url`, `table_html`, `raw_table_json`, `record_hash`, `raw_file_path`.
+  - RAW record: one JSONL line with `ingestion_run_id`, `ingestion_ts`, `data_source="wikipedia_co2"`, `page_url`, `pageid`, `revid`, `rev_timestamp`, `table_html`, `raw_table_json`, `record_hash`, `raw_file_path`.
   - Output: `raw/wikipedia_co2/wikipedia_co2_raw_<timestamp>.jsonl` via `StorageAdapter`.
   - Metadata: starts/ends a run; `rows_processed` equals number of parsed table rows.
 
@@ -134,6 +134,7 @@ Notes:
   - End: updates status (`SUCCESS`/`FAILED`), `rows_processed`, optional `last_checkpoint` and `error_message`.
 - Checkpoints:
   - World Bank uses `last_year_loaded_world_bank` (string) to enable incremental by year.
+  - Wikipedia uses `last_revid_wikipedia_co2` (string) to short-circuit unchanged page revisions.
   - CURATED writes `last_checkpoint = snapshot_date=<YYYYMMDD>` for traceability.
 - DynamoDB schema (as used by the adapter):
   - Items use `pk`/`sk` with patterns `RUN#<uuid> / META` and `CHECKPOINT#<source> / META`.
@@ -187,7 +188,8 @@ Notes:
   - Path: `raw/wikipedia_co2/wikipedia_co2_raw_<timestamp>.jsonl`.
   - Content fields:
     - `ingestion_run_id`, `ingestion_ts` (UTC ISO), `data_source="wikipedia_co2"`.
-    - `page_url` (source URL), `table_html` (HTML of the chosen wikitable).
+    - `page_url` (source URL), `pageid`, `revid`, `rev_timestamp`.
+    - `table_html` (HTML of the chosen wikitable).
     - `raw_table_json`: `{headers: [..], rows: [{<header>: <cell_text>, ...}, ...]}`.
     - `record_hash` (SHA1 over `raw_table_json`), `raw_file_path` (logical key).
   - Produced by: `src/crawler/wikipedia_co2_crawler.py:crawl_wikipedia_co2_raw`.
@@ -292,10 +294,9 @@ Notes:
   - Update: after a successful run, checkpoint advances to the max ingested year.
 
 - Wikipedia crawler
-  - Snapshot-based (no incremental checkpoint). Each run writes a new RAW file with `record_hash` for traceability.
-  - Rationale: the page does not provide stable row keys and editors may change historical values; MediaWiki diffs are textual and do not reliably map cell-level changes within tables. Attempting a "only new/changed rows" incremental is fragile and risks missing corrections.
-  - Resulting choice: reprocess the entire table on change to keep the pipeline simple, idempotent, and auditable.
-  - Safe optimization (future): store and compare the page `revid`; if unchanged, skip the crawl; if changed, download and parse the full page. Optionally persist `pageid`, `revid`, and `rev_timestamp` in RAW metadata for audit.
+  - Snapshot with revision guard: stores checkpoint `last_revid_wikipedia_co2`. On run, queries MediaWiki for latest `revid`; if unchanged, skips crawling and processing; if changed, downloads and parses the full page and writes a new RAW snapshot.
+  - Rationale: the page lacks stable row keys and edits may change historical values; MediaWiki diffs are textual and don’t map cell-level changes reliably. We avoid row-level diffs and recompute the table when a new revision exists.
+  - Auditability: RAW now includes `pageid`, `revid`, and `rev_timestamp`.
 
 - Curated layer
   - Writes `snapshot_date=<YYYYMMDD>` partitions and records that as `last_checkpoint` in the curated run metadata.

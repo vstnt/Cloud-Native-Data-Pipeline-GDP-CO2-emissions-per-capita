@@ -45,6 +45,7 @@ WIKIPEDIA_CO2_URL = os.getenv(
     "https://en.wikipedia.org/wiki/List_of_countries_by_carbon_dioxide_emissions_per_capita",
 )
 WIKIPEDIA_DATA_SOURCE = "wikipedia_co2"
+WIKIPEDIA_CHECKPOINT_KEY = "last_revid_wikipedia_co2"
 
 # Logical base prefix for RAW files (local FS or S3).
 RAW_BASE_PREFIX = "raw/wikipedia_co2"
@@ -71,6 +72,73 @@ def fetch_wikipedia_co2_html(
     response = requests.get(url, headers=headers, timeout=timeout)
     response.raise_for_status()
     return response.text
+
+
+def _extract_wikipedia_title(url: str) -> str:
+    """
+    Extract the MediaWiki title from a standard /wiki/<Title> URL.
+
+    Examples
+    --------
+    https://en.wikipedia.org/wiki/Foo_Bar → Foo_Bar
+    """
+    from urllib.parse import urlparse, unquote
+
+    parsed = urlparse(url)
+    path = parsed.path or ""
+    if "/wiki/" in path:
+        title = path.split("/wiki/", 1)[1]
+    else:
+        # Fallback: entire path without leading slash
+        title = path.lstrip("/")
+    return unquote(title)
+
+
+def fetch_wikipedia_latest_revision(
+    url: str = WIKIPEDIA_CO2_URL,
+    *,
+    timeout: int = 30,
+) -> Tuple[Optional[int], Optional[int], Optional[str]]:
+    """
+    Query the MediaWiki API for the latest page revision id and timestamp.
+
+    Returns
+    -------
+    (pageid, revid, rev_timestamp) or (None, None, None) if unavailable.
+    """
+    import requests
+
+    title = _extract_wikipedia_title(url)
+    api = "https://en.wikipedia.org/w/api.php"
+    params = {
+        "action": "query",
+        "prop": "revisions",
+        "titles": title,
+        "rvprop": "ids|timestamp",
+        "format": "json",
+        "formatversion": "2",
+        "redirects": "1",
+    }
+    headers = {"User-Agent": "env-econ-pipeline/1.0 (+https://www.example.com/)"}
+    resp = requests.get(api, params=params, headers=headers, timeout=timeout)
+    resp.raise_for_status()
+    data = resp.json()
+
+    try:
+        pages = data.get("query", {}).get("pages", [])
+        if not pages:
+            return None, None, None
+        page = pages[0]
+        pageid = page.get("pageid")
+        revs = page.get("revisions", [])
+        if not revs:
+            return pageid, None, None
+        rev = revs[0]
+        revid = rev.get("revid")
+        rev_timestamp = rev.get("timestamp")
+        return pageid, revid, rev_timestamp
+    except Exception:  # noqa: BLE001
+        return None, None, None
 
 
 def _clean_cell_text(text: str) -> str:
@@ -192,7 +260,7 @@ def crawl_wikipedia_co2_raw(
     *,
     timeout: int = 30,
     run_scope: str = WIKIPEDIA_CO2_SCOPE,
-) -> str:
+) -> Dict[str, Any]:
     """
     Execute the Wikipedia crawler for CO2 per capita and persist the RAW layer.
 
@@ -207,14 +275,38 @@ def crawl_wikipedia_co2_raw(
 
     Returns
     -------
-    raw_key:
-        Logical key for the generated JSONL file, e.g.:
-        "raw/wikipedia_co2/wikipedia_co2_raw_<timestamp>.jsonl"
+    result:
+        Dict with keys:
+        - changed: bool (True if a new RAW was created)
+        - raw_key: Optional[str] (present only when changed)
+        - pageid: Optional[int]
+        - revid: Optional[int]
+        - rev_timestamp: Optional[str]
     """
     run_id = metadata.start_run(run_scope)
     ingestion_ts_iso = _now_utc_iso()
 
     try:
+        # 0. Fetch latest revision from MediaWiki API
+        pageid, revid, rev_ts = fetch_wikipedia_latest_revision(url=url, timeout=timeout)
+
+        # 0.1 Check checkpoint and short-circuit if unchanged
+        last_revid = metadata.load_checkpoint(WIKIPEDIA_CHECKPOINT_KEY)
+        if revid is not None and last_revid is not None and str(revid) == str(last_revid):
+            metadata.end_run(
+                run_id,
+                status="SKIPPED",
+                rows_processed=0,
+                last_checkpoint=str(revid),
+            )
+            return {
+                "changed": False,
+                "raw_key": None,
+                "pageid": pageid,
+                "revid": revid,
+                "rev_timestamp": rev_ts,
+            }
+
         # 1. Download the page HTML
         page_html = fetch_wikipedia_co2_html(url=url, timeout=timeout)
 
@@ -237,12 +329,15 @@ def crawl_wikipedia_co2_raw(
         key = f"{RAW_BASE_PREFIX}/wikipedia_co2_raw_{timestamp_for_filename}.jsonl"
         raw_file_path_str = key
 
-        # 6. Build final RAW record aligned with schema 1.2
+        # 6. Build final RAW record aligned with schema 1.2 (+ revision metadata)
         raw_record: Dict[str, Any] = {
             "ingestion_run_id": run_id,
             "ingestion_ts": ingestion_ts_iso,
             "data_source": WIKIPEDIA_DATA_SOURCE,
             "page_url": url,
+            "pageid": pageid,
+            "revid": revid,
+            "rev_timestamp": rev_ts,
             "table_html": table_html,
             "raw_table_json": raw_payload,
             "record_hash": record_hash,
@@ -256,14 +351,21 @@ def crawl_wikipedia_co2_raw(
         rows_processed = len(raw_table_rows)
 
         # 8. Register run completion
+        metadata.save_checkpoint(WIKIPEDIA_CHECKPOINT_KEY, str(revid) if revid is not None else "")
         metadata.end_run(
             run_id,
             status="SUCCESS",
             rows_processed=rows_processed,
-            last_checkpoint=None,
+            last_checkpoint=str(revid) if revid is not None else None,
         )
 
-        return raw_file_path_str
+        return {
+            "changed": True,
+            "raw_key": raw_file_path_str,
+            "pageid": pageid,
+            "revid": revid,
+            "rev_timestamp": rev_ts,
+        }
     except Exception as exc:  # noqa: BLE001
         metadata.end_run(
             run_id,
@@ -307,14 +409,16 @@ if __name__ == "__main__":
         url=args.url,
         timeout=args.timeout,
     )
-    print(output)
+    print(json.dumps(output, ensure_ascii=False))
 
 
 __all__ = [
     "WIKIPEDIA_CO2_URL",
     "WIKIPEDIA_DATA_SOURCE",
+    "WIKIPEDIA_CHECKPOINT_KEY",
     "RAW_BASE_PREFIX",
     "fetch_wikipedia_co2_html",
+    "fetch_wikipedia_latest_revision",
     "find_co2_table_html",
     "parse_co2_table_rows",
     "crawl_wikipedia_co2_raw",

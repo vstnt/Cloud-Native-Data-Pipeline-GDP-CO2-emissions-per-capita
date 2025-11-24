@@ -101,7 +101,8 @@ For step‑by‑step cloud details, see `cloud/instructions.md`.
   - Optional bounds `--min-year` and `--max-year` further restrict the window; if `min-year` exceeds the checkpoint, baseline becomes `min_year - 1`.
   - Even when no new rows are found, a RAW file is written (may be empty) for traceability; the run is recorded with status.
 - Wikipedia crawler:
-  - No intrinsic incremental semantics (single page snapshot). Each run records a new RAW artefact with `record_hash` for traceability.
+  - Snapshot with revision guard: the crawler queries the MediaWiki API for the latest `revid`. If unchanged, it skips re‑crawling and processing; if changed, it downloads and parses the full page and writes a new RAW snapshot.
+  - RAW records now include `pageid`, `revid`, and `rev_timestamp`; the checkpoint key is `last_revid_wikipedia_co2`.
 - Curated layer and Analytics:
   - CURATED uses `snapshot_date=<YYYYMMDD>` in the path to allow time‑travel and reproducibility.
   - The curated run stores `last_checkpoint = snapshot_date=<YYYYMMDD>` in metadata.
@@ -111,7 +112,7 @@ For step‑by‑step cloud details, see `cloud/instructions.md`.
 - RAW (World Bank GDP per capita): one JSONL line per API record, enriched with audit fields.
   - Keys: original API payload plus `ingestion_run_id`, `ingestion_ts`, `data_source="world_bank_api"`, `raw_payload` (normalized JSON), `record_hash`, `raw_file_path`.
 - RAW (Wikipedia CO₂ per capita): one JSONL record per crawl.
-  - Keys: `ingestion_run_id`, `ingestion_ts`, `data_source="wikipedia_co2"`, `page_url`, `table_html`, `raw_table_json={headers, rows}`, `record_hash`, `raw_file_path`.
+  - Keys: `ingestion_run_id`, `ingestion_ts`, `data_source="wikipedia_co2"`, `page_url`, `pageid`, `revid`, `rev_timestamp`, `table_html`, `raw_table_json={headers, rows}`, `record_hash`, `raw_file_path`.
 - PROCESSED (World Bank): typed, long‑format by country‑year.
   - Columns: `country_code`, `country_name`, `year`, `gdp_per_capita_usd`, `indicator_id`, `indicator_name`, `ingestion_run_id`, `ingestion_ts`, `data_source`.
   - Storage: Parquet partitioned by `year` under `processed/world_bank_gdp/year=<year>/`.
@@ -134,8 +135,10 @@ For step‑by‑step cloud details, see `cloud/instructions.md`.
   - Install Python deps: `pip install -r requirements.txt`.
 
 - Local end‑to‑end run
-  - Command: `PYTHONPATH=src python -m local_pipeline`.
-  - Optional bounds: `--min-year 2000 --max-year 2023`.
+  - PowerShell: `$env:PYTHONPATH='src'; python -m local_pipeline`
+  - Bash (Linux/macOS/WSL/Git Bash): `PYTHONPATH=src python -m local_pipeline`
+  - CMD (Prompt de Comando): `set PYTHONPATH=src && python -m local_pipeline`
+  - Optional bounds: append `--min-year 2000 --max-year 2023`.
   - Outputs: `raw/`, `processed/`, `curated/`, `analysis/`; metadata at `local_metadata.json`.
 
   - Cloud deployment and run
@@ -205,10 +208,9 @@ For step‑by‑step cloud details, see `cloud/instructions.md`.
   - Lambda max timeout (900s) bounds runtime; memory defaults to 2048 MB and may need tuning for larger runs.
 - Incremental behavior
   - Incremental ingestion applies to World Bank by year using a single checkpoint.
-  - Wikipedia is snapshot‑based (no incremental diffs).
-    - Why: the page does not expose stable row keys and edits can change historical values; MediaWiki diffs are textual and do not reliably map cell‑level changes in tables. A "only new/changed rows" approach is fragile and risks missing corrections.
-    - Consequence: reprocessing the entire table per revision keeps the pipeline simple, idempotent, and auditable.
-    - Possible optimization (future): check the page `revid` and skip when unchanged; if changed, download and parse the full page.
+  - Wikipedia uses a revision guard (snapshot semantics with skip on unchanged `revid`).
+    - Why: the page does not expose stable row keys and edits can change historical values; MediaWiki diffs are text‑based and don’t map reliably to table cells. We avoid row‑level incremental diffs and, when a new revision exists, reprocess the entire table.
+    - Consequence: simple, idempotent, auditable; avoids unnecessary runs when nothing changed.
 - Data quality and mapping
   - Country mapping uses normalization rules and optional overrides (`src/transformations/country_mapping_overrides.csv`); some names may require curation.
   - Joining on `(country_code, year)` drops rows without matching CO₂ or GDP.

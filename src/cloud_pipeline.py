@@ -167,19 +167,30 @@ def run_cloud_pipeline(
     artefacts["country_mapping"] = [mapping_key]
 
     # 4. Wikipedia crawler (RAW -> S3)
-    print("[cloud 4/7] Crawling Wikipedia CO2 per capita (RAW -> S3)...")
-    raw_wikipedia_key = crawl_wikipedia_co2_raw(storage, metadata)
-    artefacts["wikipedia_raw"] = [raw_wikipedia_key]
+    print("[cloud 4/7] Crawling Wikipedia CO2 per capita (RAW -> S3) with revision guard...")
+    wiki_result = crawl_wikipedia_co2_raw(storage, metadata)
+    if wiki_result.get("changed"):
+        raw_wikipedia_key = wiki_result["raw_key"]
+        artefacts["wikipedia_raw"] = [raw_wikipedia_key]
+        print(f"      RAW key: {raw_wikipedia_key} (revid={wiki_result.get('revid')})")
+    else:
+        print(
+            f"      No change detected on Wikipedia page (revid={wiki_result.get('revid')}). Skipping RAW rewrite.",
+        )
 
     # 5. Wikipedia processing (PROCESSED -> S3, with mapping)
     print("[cloud 5/7] Processing Wikipedia RAW -> PROCESSED parquet with country mapping (S3)...")
-    wiki_processed_keys = process_wikipedia_co2_raw_file(
-        raw_file_path=raw_wikipedia_key,
-        output_dir=WIKIPEDIA_CO2_PROCESSED_OUTPUT_DIR,
-        country_mapping=mapping_df,
-        storage=storage,
-    )
-    artefacts["wikipedia_processed"] = [str(k) for k in wiki_processed_keys]
+    if wiki_result.get("changed"):
+        wiki_processed_keys = process_wikipedia_co2_raw_file(
+            raw_file_path=raw_wikipedia_key,
+            output_dir=WIKIPEDIA_CO2_PROCESSED_OUTPUT_DIR,
+            country_mapping=mapping_df,
+            storage=storage,
+        )
+        artefacts["wikipedia_processed"] = [str(k) for k in wiki_processed_keys]
+        print(f"      Generated {len(wiki_processed_keys)} parquet files.")
+    else:
+        print("      Skipped: Wikipedia unchanged; keeping existing PROCESSED.")
 
     # 6. Curated join (CURATED -> S3)
     print("[cloud 6/7] Building curated econ_environment_country_year dataset (S3)...")
