@@ -32,6 +32,10 @@ Run sequence (Lambda):
 6) CURATED join (CURATED → S3)
 7) Analytical outputs (PNG/CSV → S3 `analytics/`)
 
+Note: the scatter plot may be skipped automatically when curated data is
+not available or contains no valid rows for the selected year (see
+`src/cloud_pipeline.py`).
+
 Main modules: `src/cloud_pipeline.py`, `src/adapters/*`, `src/ingestion_api/*`, `src/crawler/*`, `src/transformations/*`, `src/analysis/*`.
 
 ## Chosen Cloud Services & Justification
@@ -72,6 +76,15 @@ Expected environment variables (also configured in local `.env`):
 - `PIPELINE_S3_BUCKET` – S3 bucket name for RAW/PROCESSED/CURATED.
 - `PIPELINE_S3_BASE_PREFIX` – optional logical base prefix inside the bucket (e.g., `gdp-co2-pipeline`).
 - `PIPELINE_METADATA_TABLE` – DynamoDB table name used by `DynamoMetadataAdapter`.
+
+DynamoDB table schema required for metadata:
+
+- Partition key: `pk` (String)
+- Sort key: `sk` (String)
+
+Items follow these patterns:
+- Runs: `pk = RUN#<uuid>`, `sk = META`
+- Checkpoints: `pk = CHECKPOINT#<source>`, `sk = META`
 
 Example handler for AWS Lambda:
 
