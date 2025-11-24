@@ -153,7 +153,7 @@ def build_gdp_vs_co2_scatter(
     year: int = 2023,
     storage: StorageAdapter | None = None,
     annotate_outliers: bool = True,
-    outliers_top_n: int = 5,
+    outliers_top_n: int = 7,
 ) -> Path | str:
     """
     Gera o scatterplot para o ano informado (default: 2023).

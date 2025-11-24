@@ -1,3 +1,3 @@
 year,pearson_correlation_gdp_co2,top5_countries_highest_co2_per_1000usd_gdp,top5_countries_lowest_co2_per_1000usd_gdp
-2000,0.3831090881397363,Palau;Turkmenistan;Ukraine;Uzbekistan;Mongolia,Greenland;Faroe Islands;Bermuda;Grenada;Belize
-2023,0.37993275028842766,Palau;Mongolia;Libya;Uzbekistan;Turkmenistan,Faroe Islands;Bermuda;Cayman Islands;Sweden;Ireland
+2000,0.3831090881397363,Palau: 14.192;Turkmenistan: 13.742;Ukraine: 11.281;Uzbekistan: 9.475;Mongolia: 7.920,Greenland: 0.001;Faroe Islands: 0.002;Bermuda: 0.042;Grenada: 0.116;Belize: 0.118
+2023,0.37993275028842766,Palau: 3.937;Mongolia: 1.447;Libya: 1.439;Uzbekistan: 1.393;Turkmenistan: 1.277,Faroe Islands: 0.001;Bermuda: 0.044;Cayman Islands: 0.055;Sweden: 0.062;Ireland: 0.063
