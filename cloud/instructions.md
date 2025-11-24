@@ -1,16 +1,16 @@
-# Cloud instructions (Parte 2)
+# Cloud instructions (Part 2)
 
-Este arquivo documenta como configurar as variáveis de ambiente e a execução da pipeline em modo cloud (S3 + DynamoDB).
+This file documents environment configuration and how to run the pipeline in the cloud (S3 + DynamoDB).
 
-## 1. `.env` local para desenvolvimento
+## 1. Local `.env` for development
 
-O arquivo `.env` na raiz do projeto contém placeholders que você deve ajustar antes de usar:
+The `.env` at the project root contains placeholders you should adjust before use:
 
-- `PIPELINE_S3_BUCKET` – bucket S3 onde os dados da pipeline serão gravados.
-- `PIPELINE_S3_BASE_PREFIX` – prefixo lógico opcional dentro do bucket (ex.: `gdp-co2-pipeline`).
-- `PIPELINE_METADATA_TABLE` – nome da tabela DynamoDB de metadados (runs + checkpoints).
+- `PIPELINE_S3_BUCKET` – S3 bucket where the pipeline data will be stored.
+- `PIPELINE_S3_BASE_PREFIX` – optional logical base prefix in the bucket (e.g., `gdp-co2-pipeline`).
+- `PIPELINE_METADATA_TABLE` – DynamoDB table name for metadata (runs + checkpoints).
 
-Exemplo (já criado em `.env`):
+Example (already included in `.env`):
 
 ```bash
 PIPELINE_S3_BUCKET=your-gdp-co2-bucket
@@ -18,86 +18,86 @@ PIPELINE_S3_BASE_PREFIX=gdp-co2-pipeline
 PIPELINE_METADATA_TABLE=gdp_co2_metadata
 ```
 
-Use seu mecanismo preferido para carregar esse `.env` localmente (plugin do IDE, `python-dotenv`, etc.) ou exporte as variáveis manualmente.
+Use your preferred mechanism to load this `.env` locally (IDE plugin, `python-dotenv`, etc.) or export the variables manually.
 
-## 2. Configuração esperada na AWS
+## 2. Expected AWS configuration
 
-Ao criar a função AWS Lambda que executará a pipeline cloud:
+When creating the AWS Lambda function that runs the cloud pipeline:
 
-- Defina as mesmas variáveis de ambiente (`PIPELINE_S3_BUCKET`, `PIPELINE_S3_BASE_PREFIX`, `PIPELINE_METADATA_TABLE`) na configuração da função.
-- Use como handler: `cloud_pipeline.lambda_handler`.
-- Garanta que a role da Lambda tenha permissões de:
-  - `s3:GetObject`, `s3:PutObject`, `s3:ListBucket` no bucket/prefixo configurado.
-  - `dynamodb:PutItem`, `dynamodb:GetItem`, `dynamodb:UpdateItem`, `dynamodb:Scan` na tabela de metadata.
+- Set the same environment variables (`PIPELINE_S3_BUCKET`, `PIPELINE_S3_BASE_PREFIX`, `PIPELINE_METADATA_TABLE`) in the function configuration.
+- Use handler: `cloud_pipeline.lambda_handler`.
+- Ensure the Lambda execution role has permissions:
+  - `s3:GetObject`, `s3:PutObject`, `s3:ListBucket` on the configured bucket/prefix.
+  - `dynamodb:PutItem`, `dynamodb:GetItem`, `dynamodb:UpdateItem`, `dynamodb:Scan` on the metadata table.
 
-## 3. Deploy do Lambda (container image)
+## 3. Lambda deployment (container image)
 
-Pré-requisitos (no seu WSL):
+Prerequisites (on WSL or Linux):
 
-- Docker instalado e rodando
-- AWS CLI v2 configurado (`aws configure`) com conta/região corretas
+- Docker installed and running
+- AWS CLI v2 configured (`aws configure`) with the correct account/region
 
-Passos:
+Steps:
 
-1) Ajuste as variáveis no arquivo `.env` na raiz do projeto (já existem exemplos):
+1) Set the variables in the project root `.env` (examples included):
 
    - `PIPELINE_S3_BUCKET`
    - `PIPELINE_S3_BASE_PREFIX`
    - `PIPELINE_METADATA_TABLE`
 
-2) Construa a imagem, publique no ECR e faça o deploy do stack CloudFormation:
+2) Build the image, push to ECR, and deploy the CloudFormation stack:
 
-   - Bash (WSL):
+   - Bash:
 
      `cloud/lambda/build_and_deploy.sh`
 
-   Esse script irá:
-   - Criar/usar um repositório ECR (`gdp-co2-pipeline`).
-   - Buildar a imagem do Lambda (base `python:3.11` da AWS Lambda) com todo o código e dependências.
-   - Publicar a imagem no ECR.
-   - Criar/atualizar o stack CloudFormation com:
-     - IAM Role mínima para S3 (bucket/prefixo) e DynamoDB (tabela).
-     - Função Lambda com `PackageType: Image`.
-     - Regra de agendamento EventBridge (diária às 02:00 UTC por padrão).
+   This script will:
+   - Create/use an ECR repository (`gdp-co2-pipeline`).
+   - Build the Lambda image (AWS Lambda Python 3.11 base) with code and dependencies.
+   - Push the image to ECR.
+   - Create/update the CloudFormation stack with:
+     - Minimal IAM Role for S3 (bucket/prefix) and DynamoDB (table).
+     - Lambda function with `PackageType: Image`.
+     - EventBridge schedule rule (daily at 02:00 UTC by default).
 
-Parâmetros do deploy (opcionais via env):
+Deployment parameters (optional via env):
 
 - `STACK_NAME` (default `gdp-co2-pipeline`)
 - `STACK_SUFFIX` (default `gdp-co2`)
 - `AWS_REGION` (default `us-east-1`)
-- `SCHEDULE_EXPRESSION` (ex.: `rate(1 day)`)
+- `SCHEDULE_EXPRESSION` (e.g., `rate(1 day)`)
 - `MEMORY_SIZE` (default `2048`)
 - `TIMEOUT` (default `900`)
 
-Saída: o comando mostra os outputs do stack, incluindo nome da função.
+Output: the command prints the stack outputs, including the function name.
 
-## 4. Teste rápido (invocar manualmente)
+## 4. Quick test (manual invoke)
 
-Após o deploy, você pode invocar manualmente:
+After deployment, you can invoke manually:
 
-- Descobrir o nome da função (caso não tenha notado nos outputs):
+- Get the function name (if you missed it in outputs):
   `aws cloudformation describe-stacks --stack-name gdp-co2-pipeline --query 'Stacks[0].Outputs[?OutputKey==\`LambdaFunctionName\`].OutputValue' --output text`
 
-- Invocar sem payload (usa anos padrão):
-  `aws lambda invoke --function-name <nome-da-funcao> --payload '{}' out.json`
+- Invoke without payload (uses default years):
+  `aws lambda invoke --function-name <function-name> --payload '{}' out.json`
 
-- Invocar com intervalo de anos restrito:
-  `aws lambda invoke --function-name <nome-da-funcao> --payload '{"min_year": 2000, "max_year": 2023}' out.json`
+- Invoke with a restricted year range:
+  `aws lambda invoke --function-name <function-name> --payload '{"min_year": 2000, "max_year": 2023}' out.json`
 
-O arquivo `out.json` conterá o `statusCode` e um resumo dos artefatos.
+The `out.json` file will contain the `statusCode` and an artefact summary.
 
-## 5. Execução da pipeline cloud (visão geral)
+## 5. Cloud pipeline execution (overview)
 
-- A função `run_cloud_pipeline` em `src/cloud_pipeline.py` orquestra:
-  1. Ingesta RAW da World Bank (S3).
-  2. Processamento PROCESSED da World Bank (S3).
-  3. Geração do `country_mapping` (S3).
-  4. Crawler RAW da Wikipedia (S3).
-  5. Processamento PROCESSED da Wikipedia (S3, com mapping).
-  6. Camada CURATED (S3).
-  7. Analytical Output local, lendo CURATED via S3.
+- The `run_cloud_pipeline` in `src/cloud_pipeline.py` orchestrates:
+  1. World Bank RAW ingestion (S3).
+  2. World Bank PROCESSED transformation (S3).
+  3. `country_mapping` build (S3).
+  4. Wikipedia RAW crawler (S3).
+  5. Wikipedia PROCESSED transformation (S3, with mapping).
+  6. CURATED layer (S3).
+  7. Analytical outputs, reading CURATED via S3.
 
-O evento da Lambda pode opcionalmente conter `min_year` e `max_year` para limitar o intervalo de anos da ingestão da World Bank.
+The Lambda event may optionally contain `min_year` and `max_year` to limit the World Bank ingestion range.
 
-Observações:
-- A partir desta versão, os artefatos analíticos (PNG e CSV) também são salvos em S3 via `StorageAdapter` sob o prefixo `analytics/<YYYYMMDD>/...`. Em execução local, continuam sendo gravados na pasta `analysis/`.
+Notes:
+- From this version onward, analytical artefacts (PNG and CSV) are also saved in S3 via the `StorageAdapter` under `analytics/<YYYYMMDD>/...`. In local execution, they are still written to the `analysis/` folder.
