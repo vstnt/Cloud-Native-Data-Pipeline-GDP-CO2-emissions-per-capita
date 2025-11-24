@@ -229,5 +229,11 @@ These are optional and allow customizing external sources:
     `aws s3 rm "s3://$env:PIPELINE_S3_BUCKET" --recursive --region $env:AWS_REGION`
     `aws s3api delete-bucket --bucket $env:PIPELINE_S3_BUCKET --region $env:AWS_REGION`
     `aws dynamodb delete-table --table-name env_econ_pipeline_metadata --region $env:AWS_REGION`
+  - Clean up residual IAM role (if needed; IAM is global):
+    `ROLE=${ROLE:-gdp-co2-pipeline-gdp-co2-lambda-role}`
+    `aws iam get-role --role-name "$ROLE" --no-cli-pager`
+    `for p in $(aws iam list-role-policies --role-name "$ROLE" --query 'PolicyNames[]' --output text); do aws iam delete-role-policy --role-name "$ROLE" --policy-name "$p"; done`
+    `for a in $(aws iam list-attached-role-policies --role-name "$ROLE" --query 'AttachedPolicies[].PolicyArn' --output text); do aws iam detach-role-policy --role-name "$ROLE" --policy-arn "$a"; done`
+    `aws iam delete-role --role-name "$ROLE"`
   - Tip (versioned bucket): you can use a single command to force-remove contents and the bucket:
     `aws s3 rb s3://$PIPELINE_S3_BUCKET --force --region $AWS_REGION`

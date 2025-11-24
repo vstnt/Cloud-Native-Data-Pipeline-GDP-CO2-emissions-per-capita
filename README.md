@@ -140,6 +140,8 @@ For step‑by‑step cloud details, see `cloud/instructions.md`.
 
   - Cloud deployment and run
   - Configure `.env` with `PIPELINE_S3_BUCKET`, `PIPELINE_S3_BASE_PREFIX`, `PIPELINE_METADATA_TABLE`, `AWS_REGION`.
+  - In Bash/WSL source .env (optional)
+      `set -a; source .env; set +a`
   - Build and deploy: `cloud/lambda/build_and_deploy.sh`.
   - Function name
     - If you used the defaults, the Lambda function name is `gdp-co2-pipeline-gdp-co2-lambda`.
@@ -181,6 +183,13 @@ For step‑by‑step cloud details, see `cloud/instructions.md`.
       `aws s3 rm "s3://$env:PIPELINE_S3_BUCKET" --recursive --region $env:AWS_REGION`
       `aws s3api delete-bucket --bucket $env:PIPELINE_S3_BUCKET --region $env:AWS_REGION`
       `aws dynamodb delete-table --table-name env_econ_pipeline_metadata --region $env:AWS_REGION`
+
+    - Clean up residual IAM role (if needed; IAM is global, no region flag):
+      `ROLE=${ROLE:-gdp-co2-pipeline-gdp-co2-lambda-role}`
+      `aws iam get-role --role-name "$ROLE" --no-cli-pager`
+      `for p in $(aws iam list-role-policies --role-name "$ROLE" --query 'PolicyNames[]' --output text); do aws iam delete-role-policy --role-name "$ROLE" --policy-name "$p"; done`
+      `for a in $(aws iam list-attached-role-policies --role-name "$ROLE" --query 'AttachedPolicies[].PolicyArn' --output text); do aws iam detach-role-policy --role-name "$ROLE" --policy-arn "$a"; done`
+      `aws iam delete-role --role-name "$ROLE"`
 
     - Tip (versioned bucket): you can use a single command to force-remove contents and the bucket:
       `aws s3 rb s3://$PIPELINE_S3_BUCKET --force --region $AWS_REGION`
