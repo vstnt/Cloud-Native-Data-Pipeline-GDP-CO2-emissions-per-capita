@@ -271,12 +271,16 @@ Essa estrutura está alinhada ao desenho proposto no plano (camadas RAW → PROC
   - Calcula:
     - `top5_countries_highest_co2_per_1000usd_gdp`: países com maior `co2_per_1000usd_gdp` (top 5), como string com nomes separados por `;`.
     - `top5_countries_lowest_co2_per_1000usd_gdp`: países com menor `co2_per_1000usd_gdp` (top 5), também separados por `;`.
-- Output:
+- Output (execução local):
   - CSV salvo em `analysis/correlation_summary.csv` com colunas:
     - `year`
     - `pearson_correlation_gdp_co2`
     - `top5_countries_highest_co2_per_1000usd_gdp`
     - `top5_countries_lowest_co2_per_1000usd_gdp`
+  
+  No modo cloud (Lambda), os artefatos analíticos são persistidos em S3 via `StorageAdapter` sob `analytics/<YYYYMMDD>/`:
+  - `analytics/<YYYYMMDD>/gdp_vs_co2_scatter.png`
+  - `analytics/<YYYYMMDD>/correlation_summary.csv`
 
 ## 10. Orquestração LOCAL (entrypoint local)
 
@@ -338,11 +342,31 @@ Os adapters (`StorageAdapter`, `MetadataAdapter`, `S3StorageAdapter`, `DynamoMet
 
 ## 13. Progresso recente na Parte 2 (cloud/AWS)
 
-Desde a versao inicial deste resumo, a parte 2 recebeu preparacao de codigo (entrypoint cloud, .env e adaptacao das transformacoes), mas os recursos AWS ainda nao foram criados.
+Entrega concluída para deploy e execução em Lambda (com persistência de analytics em S3):
 
-- Novo entrypoint cloud: src/cloud_pipeline.py (run_cloud_pipeline e lambda_handler), orquestrando a pipeline com S3StorageAdapter + DynamoMetadataAdapter e lendo variaveis PIPELINE_S3_BUCKET, PIPELINE_S3_BASE_PREFIX, PIPELINE_METADATA_TABLE.
-- Loader de .env: src/env_loader.py (load_dotenv_if_present), usado por cloud_pipeline, ingestion_api/world_bank_ingestion.py (WORLD_BANK_INDICATOR) e crawler/wikipedia_co2_crawler.py (WIKIPEDIA_URL).
-- Transformacoes prontas para ler RAW via StorageAdapter: world_bank_gdp_processed e wikipedia_co2_processed aceitam um StorageAdapter para ler JSONL (ex.: de S3).
-- Country mapping preparado para S3: country_mapping.py usa COUNTRY_MAPPING_BASE_PREFIX e pode montar o mapping a partir de Parquets lidos via StorageAdapter.
+- Entrypoint cloud: `src/cloud_pipeline.py`
+  - Orquestra S3 (`S3StorageAdapter`) + DynamoDB (`DynamoMetadataAdapter`).
+  - Lê variáveis: `PIPELINE_S3_BUCKET`, `PIPELINE_S3_BASE_PREFIX`, `PIPELINE_METADATA_TABLE`.
+  - Em cloud, injeta o `MetadataAdapter` (Dynamo) também na etapa CURATED para registrar `start_run`/`end_run` em DynamoDB.
 
-Estado atual: o codigo esta pronto para ser empacotado em uma Lambda (handler cloud_pipeline.lambda_handler); falta apenas criar bucket S3, tabela DynamoDB, IAM Role e EventBridge, e configurar as mesmas variaveis de ambiente usadas no .env.
+- Analytics em S3:
+  - Atualização em `src/analysis/econ_environment_analytics.py` para, quando `storage` é fornecido, salvar:
+    - `analytics/<YYYYMMDD>/gdp_vs_co2_scatter.png`
+    - `analytics/<YYYYMMDD>/correlation_summary.csv`
+  - Em execução local, segue gravando em `analysis/`.
+
+- Infra como código em `cloud/lambda/`:
+  - `Dockerfile` (Lambda Python 3.11, instala `requirements.txt` no `${LAMBDA_TASK_ROOT}`).
+  - `template.yaml` (CloudFormation):
+    - IAM Role mínima (CloudWatch Logs + S3 bucket/prefix + DynamoDB table).
+    - Função Lambda (PackageType: Image, handler `cloud_pipeline.lambda_handler`).
+    - Regra EventBridge diária (ajustável por parâmetro `ScheduleExpression`).
+  - `build_and_deploy.sh` (WSL-friendly):
+    - Build Docker (preferencialmente via buildx, compatível com media types do Lambda); fallback clássico se necessário.
+    - Push para ECR e deploy do stack (`gdp-co2-pipeline`).
+
+- Deploy/Teste realizados:
+  - Stack criado/atualizado com sucesso (region `us-east-2`).
+  - Lambda: `gdp-co2-pipeline-gdp-co2-lambda` (Outputs confirmados).
+  - Invocação manual retornou `StatusCode: 200` (sucesso); logs mostram as 7 etapas da pipeline executadas em cloud.
+  - Artefatos analíticos disponíveis em `s3://<bucket>/<base_prefix>/analytics/<YYYYMMDD>/`.
