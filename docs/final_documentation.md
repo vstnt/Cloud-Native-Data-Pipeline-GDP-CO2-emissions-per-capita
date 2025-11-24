@@ -43,12 +43,12 @@ flowchart LR
   RAW_WB --> L
   RAW_WIKI --> L
   L -- "Transform → PROCESSED" --> PROC_WB
-  L -- "Transform + Map → PROCESSED" --> PROC_WIKI
+  L -- "Transform → PROCESSED" --> PROC_WIKI
   PROC_WB --> MAPPING
-  MAPPING --> PROC_WIKI
 
   PROC_WB --> L
   PROC_WIKI --> L
+  MAPPING --> L
   L -- "Join + Snapshot → CURATED" --> CURATED
   CURATED --> L
   L -- "Charts + Stats → ANALYTICS" --> ANALYTICS
