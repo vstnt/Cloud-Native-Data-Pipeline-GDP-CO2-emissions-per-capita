@@ -212,9 +212,22 @@ These are optional and allow customizing external sources:
 
 - Retained resources (when created via parameters):
   - S3 bucket and/or DynamoDB table are created with `DeletionPolicy: Retain`. They are not deleted by the stack.
-  - To remove them manually:
-    - Empty and delete the S3 bucket:
-      `aws s3 rm s3://${PIPELINE_S3_BUCKET} --recursive --region ${AWS_REGION}`
-      `aws s3api delete-bucket --bucket ${PIPELINE_S3_BUCKET} --region ${AWS_REGION}`
-    - Delete the DynamoDB table:
-      `aws dynamodb delete-table --table-name ${PIPELINE_METADATA_TABLE} --region ${AWS_REGION}`
+  - Option A — Source .env (Bash/WSL) and run:
+    `set -a; source .env; set +a`
+    `aws s3 rm s3://$PIPELINE_S3_BUCKET --recursive --region $AWS_REGION`
+    `aws s3api delete-bucket --bucket "$PIPELINE_S3_BUCKET" --region "$AWS_REGION"`
+    `aws dynamodb delete-table --table-name "$PIPELINE_METADATA_TABLE" --region "$AWS_REGION"`
+  - Option B — Read names from CloudFormation outputs (Bash/WSL):
+    `STACK_NAME=${STACK_NAME:-gdp-co2-pipeline}; AWS_REGION=${AWS_REGION:-us-east-2}`
+    `BUCKET=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$AWS_REGION" --query "Stacks[0].Outputs[?OutputKey=='EffectiveBucketName'].OutputValue" --output text)`
+    `TABLE=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$AWS_REGION" --query "Stacks[0].Outputs[?OutputKey=='EffectiveMetadataTableName'].OutputValue" --output text)`
+    `aws s3 rm s3://"$BUCKET" --recursive --region "$AWS_REGION"`
+    `aws s3api delete-bucket --bucket "$BUCKET" --region "$AWS_REGION"`
+    `aws dynamodb delete-table --table-name "$TABLE" --region "$AWS_REGION"`
+  - Option C — PowerShell:
+    `$env:PIPELINE_S3_BUCKET='env-econ-pipeline-data'; $env:AWS_REGION='us-east-2'`
+    `aws s3 rm "s3://$env:PIPELINE_S3_BUCKET" --recursive --region $env:AWS_REGION`
+    `aws s3api delete-bucket --bucket $env:PIPELINE_S3_BUCKET --region $env:AWS_REGION`
+    `aws dynamodb delete-table --table-name env_econ_pipeline_metadata --region $env:AWS_REGION`
+  - Tip (versioned bucket): you can use a single command to force-remove contents and the bucket:
+    `aws s3 rb s3://$PIPELINE_S3_BUCKET --force --region $AWS_REGION`
