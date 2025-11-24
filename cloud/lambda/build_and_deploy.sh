@@ -29,6 +29,8 @@ PIPELINE_METADATA_TABLE=${PIPELINE_METADATA_TABLE:?Set PIPELINE_METADATA_TABLE i
 SCHEDULE_EXPRESSION=${SCHEDULE_EXPRESSION:-"cron(0 2 * * ? *)"}
 MEMORY_SIZE=${MEMORY_SIZE:-2048}
 TIMEOUT=${TIMEOUT:-900}
+CREATE_S3_BUCKET=${CREATE_S3_BUCKET:-false}
+CREATE_DYNAMO_TABLE=${CREATE_DYNAMO_TABLE:-false}
 
 echo "Using AWS region: ${REGION}"
 
@@ -117,6 +119,8 @@ echo "Deploying CloudFormation stack: ${STACK_NAME}"
       PipelineBucketName="${PIPELINE_S3_BUCKET}" \
       PipelineBasePrefix="${PIPELINE_S3_BASE_PREFIX}" \
       MetadataTableName="${PIPELINE_METADATA_TABLE}" \
+      CreateS3Bucket="${CREATE_S3_BUCKET}" \
+      CreateDynamoTable="${CREATE_DYNAMO_TABLE}" \
       ScheduleExpression="${SCHEDULE_EXPRESSION}" \
       MemorySize="${MEMORY_SIZE}" \
       Timeout="${TIMEOUT}" \

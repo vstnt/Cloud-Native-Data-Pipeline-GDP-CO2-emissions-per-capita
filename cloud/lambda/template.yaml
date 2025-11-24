@@ -24,6 +24,18 @@ Parameters:
     Type: String
     Description: DynamoDB metadata table name (runs + checkpoints).
 
+  CreateS3Bucket:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: If 'true', create the S3 bucket with name PipelineBucketName and retain it on stack deletion.
+
+  CreateDynamoTable:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: If 'true', create the DynamoDB table with name MetadataTableName (pk/sk) and retain it on stack deletion.
+
   ScheduleExpression:
     Type: String
     Default: cron(0 2 * * ? *)
@@ -39,7 +51,20 @@ Parameters:
     Default: 900
     Description: Lambda timeout in seconds (max 900s for standard Lambda).
 
+Conditions:
+  CreateBucketCond: !Equals [ !Ref CreateS3Bucket, 'true' ]
+  CreateTableCond: !Equals [ !Ref CreateDynamoTable, 'true' ]
+
 Resources:
+  # Optional S3 bucket (retained) — created only when CreateS3Bucket=true
+  PipelineBucket:
+    Type: AWS::S3::Bucket
+    Condition: CreateBucketCond
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Ref PipelineBucketName
+
   PipelineLambdaRole:
     Type: AWS::IAM::Role
     Properties:
@@ -63,12 +88,16 @@ Resources:
                   - s3:GetObject
                   - s3:PutObject
                 Resource:
-                  - !Sub 'arn:aws:s3:::${PipelineBucketName}/${PipelineBasePrefix}/*'
+                  - !Sub
+                      - 'arn:aws:s3:::${BucketName}/${PipelineBasePrefix}/*'
+                      - { BucketName: !If [ CreateBucketCond, !Ref PipelineBucket, !Ref PipelineBucketName ] }
               - Effect: Allow
                 Action:
                   - s3:ListBucket
                 Resource:
-                  - !Sub 'arn:aws:s3:::${PipelineBucketName}'
+                  - !Sub
+                      - 'arn:aws:s3:::${BucketName}'
+                      - { BucketName: !If [ CreateBucketCond, !Ref PipelineBucket, !Ref PipelineBucketName ] }
                 Condition:
                   StringLike:
                     s3:prefix:
@@ -84,7 +113,30 @@ Resources:
                   - dynamodb:UpdateItem
                   - dynamodb:Scan
                 Resource:
-                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${MetadataTableName}'
+                  - !If
+                      - CreateTableCond
+                      - !GetAtt MetadataTable.Arn
+                      - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${MetadataTableName}'
+
+  # Optional DynamoDB table (retained) — created only when CreateDynamoTable=true
+  MetadataTable:
+    Type: AWS::DynamoDB::Table
+    Condition: CreateTableCond
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Ref MetadataTableName
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
 
   PipelineLambda:
     Type: AWS::Lambda::Function
@@ -102,9 +154,9 @@ Resources:
         - x86_64
       Environment:
         Variables:
-          PIPELINE_S3_BUCKET: !Ref PipelineBucketName
+          PIPELINE_S3_BUCKET: !If [ CreateBucketCond, !Ref PipelineBucket, !Ref PipelineBucketName ]
           PIPELINE_S3_BASE_PREFIX: !Ref PipelineBasePrefix
-          PIPELINE_METADATA_TABLE: !Ref MetadataTableName
+          PIPELINE_METADATA_TABLE: !If [ CreateTableCond, !Ref MetadataTable, !Ref MetadataTableName ]
 
   PipelineScheduleRule:
     Type: AWS::Events::Rule
@@ -134,3 +186,9 @@ Outputs:
   ScheduleArn:
     Value: !GetAtt PipelineScheduleRule.Arn
     Description: ARN of the EventBridge schedule rule.
+  EffectiveBucketName:
+    Value: !If [ CreateBucketCond, !Ref PipelineBucket, !Ref PipelineBucketName ]
+    Description: S3 bucket name effectively used by the pipeline.
+  EffectiveMetadataTableName:
+    Value: !If [ CreateTableCond, !Ref MetadataTable, !Ref MetadataTableName ]
+    Description: DynamoDB table name effectively used by the pipeline.

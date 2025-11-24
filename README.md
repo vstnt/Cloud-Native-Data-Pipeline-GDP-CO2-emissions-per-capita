@@ -155,13 +155,25 @@ For step‑by‑step cloud details, see `cloud/instructions.md`.
   - Outputs in S3: `raw/`, `processed/`, `curated/`, `analytics/<YYYYMMDD>/` under the configured base prefix.
   - Scheduled runs via EventBridge (default daily 02:00 UTC).
 
+  - Cleanup / Teardown (optional)
+    - Delete the CloudFormation stack:
+      `aws cloudformation delete-stack --stack-name ${STACK_NAME:-gdp-co2-pipeline} --region ${AWS_REGION}`
+    - Optionally wait for completion:
+      `aws cloudformation wait stack-delete-complete --stack-name ${STACK_NAME:-gdp-co2-pipeline} --region ${AWS_REGION}`
+    - When `CreateS3Bucket=true` and/or `CreateDynamoTable=true` were used, the bucket/table were created with Retain policy. If you want to remove them manually:
+      - Empty and delete the S3 bucket:
+        `aws s3 rm s3://${PIPELINE_S3_BUCKET} --recursive --region ${AWS_REGION}`
+        `aws s3api delete-bucket --bucket ${PIPELINE_S3_BUCKET} --region ${AWS_REGION}`
+      - Delete the DynamoDB table:
+        `aws dynamodb delete-table --table-name ${PIPELINE_METADATA_TABLE} --region ${AWS_REGION}`
+
 ## Assumptions & Limitations
 
 - External data stability
   - Wikipedia table structure may change; heuristics choose the main CO₂ per capita table or fallback to the first `wikitable`.
   - World Bank indicator defaults to `NY.GDP.PCAP.CD` but can be overridden via `WORLD_BANK_INDICATOR`.
 - Infrastructure scope
-  - The CloudFormation template expects an existing S3 bucket and DynamoDB table; it does not create them.
+  - The CloudFormation template can use existing S3/DynamoDB resources or optionally create them (controlled by parameters `CreateS3Bucket` and `CreateDynamoTable`). When creation is enabled, resources are retained on stack deletion.
   - Lambda max timeout (900s) bounds runtime; memory defaults to 2048 MB and may need tuning for larger runs.
 - Incremental behavior
   - Incremental ingestion applies to World Bank by year using a single checkpoint. Wikipedia is snapshot‑based without incremental diffs.

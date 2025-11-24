@@ -32,7 +32,7 @@ When creating the AWS Lambda function that runs the cloud pipeline:
 
 Notes:
 - If you deploy using `cloud/lambda/build_and_deploy.sh` (CloudFormation), the handler and environment variables are set by the stack. No manual config needed in the console.
-- The template expects an existing S3 bucket and an existing DynamoDB table; it does not create them. DynamoDB table schema must be: partition key `pk` (String) and sort key `sk` (String).
+- The template can either use existing S3/DynamoDB resources or create them when enabled via parameters. DynamoDB table schema (when created) is `pk` (HASH, String) and `sk` (RANGE, String).
 
 ### Inline IAM policy example
 Use this as a reference inline policy for the Lambda execution role. Replace placeholders (`YOUR_BUCKET_NAME`, `YOUR_BASE_PREFIX`, `YOUR_REGION`, `YOUR_ACCOUNT_ID`, `YOUR_TABLE_NAME`). If you do not use a base prefix, change the S3 object ARN to `arn:aws:s3:::YOUR_BUCKET_NAME/*` and drop the `s3:prefix` condition.
@@ -114,7 +114,7 @@ Prerequisites (on WSL or Linux):
 
 - Docker installed and running
 - AWS CLI v2 configured (`aws configure`) with the correct account/region
-- Pre-created S3 bucket (`PIPELINE_S3_BUCKET`) and DynamoDB table (`PIPELINE_METADATA_TABLE`) with keys `pk` (partition) and `sk` (sort), both String.
+- Either pre-created S3 bucket (`PIPELINE_S3_BUCKET`) and DynamoDB table (`PIPELINE_METADATA_TABLE`), or enable creation via the parameters below.
 
 Steps:
 
@@ -138,6 +138,7 @@ Steps:
      - Minimal IAM Role for S3 (bucket/prefix) and DynamoDB (table).
      - Lambda function with `PackageType: Image`.
      - EventBridge schedule rule (daily at 02:00 UTC by default).
+      - Optional creation of S3 bucket and/or DynamoDB table when enabled; both are retained on stack deletion.
 
 Deployment parameters (optional via env):
 
@@ -147,6 +148,12 @@ Deployment parameters (optional via env):
 - `SCHEDULE_EXPRESSION` (e.g., `rate(1 day)`)
 - `MEMORY_SIZE` (default `2048`)
 - `TIMEOUT` (default `900`)
+- `CREATE_S3_BUCKET` (`false`/`true`) – when `true`, CloudFormation creates the S3 bucket named `PIPELINE_S3_BUCKET` and retains it on stack deletion.
+- `CREATE_DYNAMO_TABLE` (`false`/`true`) – when `true`, CloudFormation creates the DynamoDB table named `PIPELINE_METADATA_TABLE` (keys `pk`/`sk`) and retains it on stack deletion.
+
+Behavior when creation is enabled:
+- S3: The bucket name will be exactly `PIPELINE_S3_BUCKET`. Ensure it is globally unique and not owned by another AWS account.
+- DynamoDB: The table name will be exactly `PIPELINE_METADATA_TABLE` with keys `pk` (String) and `sk` (String), billing mode `PAY_PER_REQUEST`.
 
 Output: the command prints the stack outputs, including the function name.
 
@@ -194,3 +201,20 @@ These are optional and allow customizing external sources:
 
 - `WORLD_BANK_INDICATOR` – World Bank indicator to ingest (default `NY.GDP.PCAP.CD`).
 - `WIKIPEDIA_URL` – Source URL for the CO₂ per capita table (default as in code).
+
+## 7. Cleanup / Teardown
+
+- Delete the CloudFormation stack:
+  `aws cloudformation delete-stack --stack-name ${STACK_NAME:-gdp-co2-pipeline} --region ${AWS_REGION}`
+
+- Optionally wait for completion:
+  `aws cloudformation wait stack-delete-complete --stack-name ${STACK_NAME:-gdp-co2-pipeline} --region ${AWS_REGION}`
+
+- Retained resources (when created via parameters):
+  - S3 bucket and/or DynamoDB table are created with `DeletionPolicy: Retain`. They are not deleted by the stack.
+  - To remove them manually:
+    - Empty and delete the S3 bucket:
+      `aws s3 rm s3://${PIPELINE_S3_BUCKET} --recursive --region ${AWS_REGION}`
+      `aws s3api delete-bucket --bucket ${PIPELINE_S3_BUCKET} --region ${AWS_REGION}`
+    - Delete the DynamoDB table:
+      `aws dynamodb delete-table --table-name ${PIPELINE_METADATA_TABLE} --region ${AWS_REGION}`
