@@ -138,12 +138,20 @@ For step‑by‑step cloud details, see `cloud/instructions.md`.
   - Optional bounds: `--min-year 2000 --max-year 2023`.
   - Outputs: `raw/`, `processed/`, `curated/`, `analysis/`; metadata at `local_metadata.json`.
 
-- Cloud deployment and run
+  - Cloud deployment and run
   - Configure `.env` with `PIPELINE_S3_BUCKET`, `PIPELINE_S3_BASE_PREFIX`, `PIPELINE_METADATA_TABLE`, `AWS_REGION`.
   - Build and deploy: `cloud/lambda/build_and_deploy.sh`.
-  - Invoke manually (example):
-    - `aws lambda invoke --function-name <function-name> --payload '{}' out.json`
-    - With bounds: `--payload '{"min_year":2000, "max_year":2023}'`.
+  - Function name
+    - If you used the defaults, the Lambda function name is `gdp-co2-pipeline-gdp-co2-lambda`.
+    - Otherwise, fetch it from the stack outputs:
+      `aws cloudformation describe-stacks --stack-name ${STACK_NAME:-gdp-co2-pipeline} --query 'Stacks[0].Outputs[?OutputKey==\`LambdaFunctionName\`].OutputValue' --output text --region ${AWS_REGION}`
+  - Invoke manually (examples)
+    - Default (no payload):
+      `aws lambda invoke --function-name gdp-co2-pipeline-gdp-co2-lambda --payload '{}' out.json --region ${AWS_REGION}`
+    - With bounds:
+      `aws lambda invoke --function-name gdp-co2-pipeline-gdp-co2-lambda --payload '{"min_year":2000, "max_year":2023}' out.json --region ${AWS_REGION}`
+    - Using sample event file:
+      `aws lambda invoke --function-name gdp-co2-pipeline-gdp-co2-lambda --payload fileb://cloud/lambda/sample_event.json out.json --region ${AWS_REGION}`
   - Outputs in S3: `raw/`, `processed/`, `curated/`, `analytics/<YYYYMMDD>/` under the configured base prefix.
   - Scheduled runs via EventBridge (default daily 02:00 UTC).
 
