@@ -88,6 +88,8 @@ Resources:
 
   PipelineLambda:
     Type: AWS::Lambda::Function
+    DependsOn:
+      - PipelineLambdaRole
     Properties:
       FunctionName: !Sub '${AWS::StackName}-${StackNameSuffix}-lambda'
       PackageType: Image
@@ -117,7 +119,7 @@ Resources:
   PermissionForEventsToInvokeLambda:
     Type: AWS::Lambda::Permission
     Properties:
-      FunctionName: !Ref PipelineLambda
+      FunctionName: !GetAtt PipelineLambda.Arn
       Action: lambda:InvokeFunction
       Principal: events.amazonaws.com
       SourceArn: !GetAtt PipelineScheduleRule.Arn
@@ -132,4 +134,3 @@ Outputs:
   ScheduleArn:
     Value: !GetAtt PipelineScheduleRule.Arn
     Description: ARN of the EventBridge schedule rule.
-

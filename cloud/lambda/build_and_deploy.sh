@@ -32,7 +32,28 @@ TIMEOUT=${TIMEOUT:-900}
 
 echo "Using AWS region: ${REGION}"
 
-ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+# Resolve AWS CLI (WSL or Windows fallback)
+AWS="aws"
+if ! command -v "${AWS}" >/dev/null 2>&1; then
+  WIN_AWS="/mnt/c/Program Files/Amazon/AWSCLIV2/aws.exe"
+  if [ -x "${WIN_AWS}" ]; then
+    AWS="${WIN_AWS}"
+    echo "Using Windows AWS CLI at: ${AWS}"
+  else
+    echo "AWS CLI not found. Install in WSL (preferred) or Windows (MSI)." >&2
+    echo "- WSL install: https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html" >&2
+    echo "- Windows MSI: https://aws.amazon.com/cli/" >&2
+    exit 1
+  fi
+fi
+
+# Ensure Docker is available
+if ! command -v docker >/dev/null 2>&1; then
+  echo "Docker CLI not found. Install Docker Desktop and enable WSL integration." >&2
+  exit 1
+fi
+
+ACCOUNT_ID=$("${AWS}" sts get-caller-identity --query Account --output text)
 if [ -z "${ACCOUNT_ID}" ]; then
   echo "Failed to resolve AWS account ID. Is AWS CLI configured?" >&2
   exit 1
@@ -43,25 +64,32 @@ IMAGE_NAME="${ECR_REPO}:${IMAGE_TAG}"
 FULL_IMAGE_URI="${ECR_URI}/${IMAGE_NAME}"
 
 echo "Ensuring ECR repository: ${ECR_REPO}"
-aws ecr describe-repositories --repository-names "${ECR_REPO}" --region "${REGION}" >/dev/null 2>&1 || \
-  aws ecr create-repository --repository-name "${ECR_REPO}" --region "${REGION}" >/dev/null
+"${AWS}" ecr describe-repositories --repository-names "${ECR_REPO}" --region "${REGION}" >/dev/null 2>&1 || \
+  "${AWS}" ecr create-repository --repository-name "${ECR_REPO}" --region "${REGION}" >/dev/null
 
 echo "Logging in to ECR..."
-aws ecr get-login-password --region "${REGION}" | docker login --username AWS --password-stdin "${ECR_URI}"
+"${AWS}" ecr get-login-password --region "${REGION}" | docker login --username AWS --password-stdin "${ECR_URI}"
 
-echo "Building Docker image: ${IMAGE_NAME}"
-docker build -t "${IMAGE_NAME}" -f "${SCRIPT_DIR}/Dockerfile" "${REPO_ROOT}"
-
-echo "Tagging image as: ${FULL_IMAGE_URI}"
+echo "Building Docker image for Lambda using classic builder (schema2, gzip)"
+DOCKER_BUILDKIT=0 docker build -t "${IMAGE_NAME}" -f "${SCRIPT_DIR}/Dockerfile" "${REPO_ROOT}"
 docker tag "${IMAGE_NAME}" "${FULL_IMAGE_URI}"
-
-echo "Pushing image to ECR..."
 docker push "${FULL_IMAGE_URI}"
 
+# Convert template path to Windows path if using aws.exe from Windows
+TEMPLATE_FILE="${SCRIPT_DIR}/template.yaml"
+TEMPLATE_ARG="${TEMPLATE_FILE}"
+case "${AWS}" in
+  *AWSCLIV2/aws.exe)
+    if command -v wslpath >/dev/null 2>&1; then
+      TEMPLATE_ARG=$(wslpath -w "${TEMPLATE_FILE}")
+    fi
+    ;;
+esac
+
 echo "Deploying CloudFormation stack: ${STACK_NAME}"
-aws cloudformation deploy \
+"${AWS}" cloudformation deploy \
   --stack-name "${STACK_NAME}" \
-  --template-file "${SCRIPT_DIR}/template.yaml" \
+  --template-file "${TEMPLATE_ARG}" \
   --capabilities CAPABILITY_NAMED_IAM \
   --parameter-overrides \
       StackNameSuffix="${STACK_SUFFIX}" \
@@ -75,5 +103,5 @@ aws cloudformation deploy \
   --region "${REGION}"
 
 echo "Deployment completed. Stack outputs:"
-aws cloudformation describe-stacks --stack-name "${STACK_NAME}" --region "${REGION}" \
+"${AWS}" cloudformation describe-stacks --stack-name "${STACK_NAME}" --region "${REGION}" \
   --query 'Stacks[0].Outputs' --output table
